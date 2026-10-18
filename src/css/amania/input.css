@@ -1,0 +1,20 @@
+/*
+ * amania/index.php 전용 Tailwind CLI 빌드 입력 파일.
+ * 원본(Play CDN)의 tailwind.config = { darkMode:'class', theme:{extend:{...}} }를
+ * Tailwind v4의 CSS-first 설정(@custom-variant, @theme)으로 옮긴 것.
+ * 빌드: src/tools/tailwindcss.exe -i src/css/amania/input.css -o src/css/amania/tailwind.css --minify
+ */
+@import "tailwindcss";
+
+/* darkMode:'class' 대응 — <html class="dark">일 때 dark: 변형 활성화 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* theme.extend.colors / boxShadow 대응 (현재 amania/index.php에서 실사용 클래스는 없음) */
+@theme {
+  --color-labelbg: #eef1f5;
+  --color-sidebar: #1f2430;
+  --shadow-luxury: 0 1px 2px rgba(0, 0, 0, .04), 0 8px 24px rgba(0, 0, 0, .08);
+}
+
+/* 클래스 스캔 대상 — 이 CSS 파일 위치와 무관하게 amania 폴더를 명시적으로 지정 */
+@source "../../../public/amania/**/*.php";

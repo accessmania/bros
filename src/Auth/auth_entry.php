@@ -1,0 +1,90 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * 현재 로그인한 사용자의 권한(tAuth) 레코드 확인 화면.
+ *
+ * 로그인 시 Login::afterLogin()이 Auth::loadByCode()로 세션에 담아둔 auth
+ * rec의 **모든 필드**를 "필드 : 값" 형식으로 리치텍스트 상자 하나에
+ * 나열한다(Auth::getAllValues() — FIELDS에 없는 컬럼도 포함).
+ *
+ * 세션만 읽으므로 DB 접속(DbContext/Login::init)이 필요 없다. 표시 전용이며
+ * 여기서 값을 바꾸거나 저장하지 않는다.
+ */
+for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir = dirname($__bootDir)) {
+    if ($__bootDir === dirname($__bootDir)) {
+        throw new RuntimeException('프로젝트 루트(config/Path.php)를 찾을 수 없습니다.');
+    }
+}
+require_once $__bootDir . '/config/Path.php';
+unset($__bootDir);
+include_custom('Login', 'Auth', 'Str');
+
+// 로그인이 안 살아있으면 여기서 login.php로 이동하고 끝난다.
+Login::isAlive();
+
+function h($value): string
+{
+    return Str::escape($value);
+}
+
+$authRec = Auth::getAllValues();
+?>
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>권한 정보</title>
+<style>
+body {
+    font-family: 'Segoe UI', Inter, system-ui, sans-serif;
+    margin: 0;
+    padding: 24px 16px;
+    background: #f5f6f8;
+    color: #1f2328;
+}
+.ae-wrap { max-width: 760px; margin: 0 auto; }
+.ae-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.ae-head h1 { font-size: 1.25rem; margin: 0 0 12px; }
+.ae-head .ae-user { font-size: 0.9rem; color: #57606a; }
+.ae-head a { color: #0969da; }
+
+/* 리치텍스트 상자 — auth rec 전체를 "필드 : 값" 줄로 나열한다. */
+.ae-richtext {
+    background: #fff;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    padding: 20px 24px;
+    min-height: 240px;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+}
+.ae-richtext p { margin: 0 0 6px; }
+.ae-richtext .ae-field { font-weight: 600; }
+.ae-richtext .ae-value { white-space: pre-wrap; }
+.ae-richtext .ae-empty { color: #8c959f; font-style: italic; }
+</style>
+</head>
+<body>
+<div class="ae-wrap">
+    <div class="ae-head">
+        <h1>권한 정보 (auth rec)</h1>
+        <div class="ae-user">
+            <?= h(Login::getValue('이름')) ?> (<?= h(Login::getValue('id')) ?>)
+            · <a href="<?= h(LOGIN_BASE_URL . '/logout.php') ?>">로그아웃</a>
+        </div>
+    </div>
+
+    <div class="ae-richtext" role="document" aria-label="권한 정보">
+<?php if (empty($authRec)): ?>
+        <p class="ae-empty">이 계정에 연결된 권한(tAuth) 레코드가 없습니다. tLogin의 권한code가 비어 있거나 tAuth에 해당 code가 없습니다.</p>
+<?php else: ?>
+<?php foreach ($authRec as $field => $value): ?>
+        <p><span class="ae-field"><?= h($field) ?></span> : <?php if ($value === null || $value === ''): ?><span class="ae-empty">(없음)</span><?php else: ?><span class="ae-value"><?= h($value) ?></span><?php endif; ?></p>
+<?php endforeach; ?>
+<?php endif; ?>
+    </div>
+</div>
+</body>
+</html>

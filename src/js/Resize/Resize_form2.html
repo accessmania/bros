@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resize Form 2</title>
+<style>
+    html, body { margin: 0; height: 100%; box-sizing: border-box; }
+    body {
+        font-family: 'Segoe UI', Inter, system-ui, -apple-system, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: #dcfce7;
+        color: #14532d;
+    }
+    .rf-label { font-size: 1.1rem; font-weight: 700; }
+    .rf-size { margin-top: 6px; font-size: 0.8rem; color: #366043; }
+</style>
+</head>
+<body>
+    <div class="rf-label">Form 2</div>
+    <div class="rf-size" id="rf-size">-</div>
+    <script>
+        function reportSize() {
+            var el = document.getElementById('rf-size');
+            el.textContent = Math.round(document.documentElement.clientWidth) + ' x ' + Math.round(document.documentElement.clientHeight) + ' px';
+        }
+        window.addEventListener('resize', reportSize);
+        reportSize();
+    </script>
+</body>
+</html>
