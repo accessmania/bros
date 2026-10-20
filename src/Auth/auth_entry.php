@@ -64,6 +64,17 @@ body {
 .ae-richtext .ae-field { font-weight: 600; }
 .ae-richtext .ae-value { white-space: pre-wrap; }
 .ae-richtext .ae-empty { color: #8c959f; font-style: italic; }
+
+/* 권한 확인 — 권한명을 넣고 버튼을 누르면 true/false를 alert로 보여준다. */
+.ae-check { display: flex; gap: 8px; margin: 0 0 12px; }
+.ae-check input {
+    flex: 1; padding: 6px 8px; border: 1px solid #d0d7de; border-radius: 4px; font-size: 0.9rem;
+}
+.ae-check button {
+    padding: 6px 14px; border: none; border-radius: 4px; background: #2563eb; color: #fff;
+    font-size: 0.9rem; font-weight: 600; cursor: pointer;
+}
+.ae-check button:hover { background: #1d4ed8; }
 </style>
 </head>
 <body>
@@ -76,6 +87,11 @@ body {
         </div>
     </div>
 
+    <div class="ae-check">
+        <input type="text" id="ae-check-input" placeholder="권한명 (예: button기초자료)">
+        <button type="button" id="ae-check-btn">권한 확인</button>
+    </div>
+
     <div class="ae-richtext" role="document" aria-label="권한 정보">
 <?php if (empty($authRec)): ?>
         <p class="ae-empty">이 계정에 연결된 권한(tAuth) 레코드가 없습니다. tLogin의 권한code가 비어 있거나 tAuth에 해당 code가 없습니다.</p>
@@ -86,5 +102,24 @@ body {
 <?php endif; ?>
     </div>
 </div>
+<script>
+// 권한 확인 — index의 getauth(권한명)로 판단한다(getbank('auth')에 저장된
+// authstring 기준, index 안의 탭으로 열어야 동작).
+function aeCheck() {
+    if (window.parent === window || typeof window.parent.getauth !== 'function') {
+        window.alert('getauth를 찾을 수 없습니다. 메뉴(index)에서 열어 주세요.');
+        return;
+    }
+    var code = document.getElementById('ae-check-input').value;
+    window.alert(window.parent.getauth(code) ? 'true' : 'false');
+}
+
+document.getElementById('ae-check-btn').addEventListener('click', aeCheck);
+document.getElementById('ae-check-input').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+        aeCheck();
+    }
+});
+</script>
 </body>
 </html>

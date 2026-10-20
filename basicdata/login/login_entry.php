@@ -2,12 +2,17 @@
 declare(strict_types=1);
 
 /**
- * [AGGrid 모듈용 프론트엔드 config — "로그인"(tLogin, MSSQL deco DB) 그리드]
+ * [로그인(tLogin, MSSQL deco DB) AGGrid 화면 — 메뉴 "기초자료 > 로그인"]
+ * 구성: login_entry.php(이 파일, 화면 + 프론트 config) + login_fetch.php(CRUD).
+ * 원래 컨테이너 페이지(test/testlogin.php)에 include되던 config_로그인.php였으나,
+ * 메뉴에서 바로 열 수 있도록 html 골격(AGGrid.js 로드, 그리드 div)까지 갖춘
+ * 독립 화면으로 바꿨다.
+ *
  * src/js/aggrid/AGGrid.js가 소비할 설정을 <script> 블록으로 echo한다
  * (src/js/aggrid/aggrid.md "적용 가이드" 참고). fetchMode/pageSize/
  * autoFitBottomGap 값은 AGGrid의 공식 baseline(1_9/1_20)을 그대로 따른다.
  *
- * tLogin의 실제 컬럼 구성을 미리 알 수 없어서(fetch_로그인.php와 동일한
+ * tLogin의 실제 컬럼 구성을 미리 알 수 없어서(login_fetch.php와 동일한
  * 이유), 이 파일도 요청마다 Crud::init()으로 스키마를 직접 조회해
  * columnDefs를 구성한다 — 1_9/1_20처럼 컬럼을 코드에 직접 나열하지 않는
  * 유일한 이유가 이것(tLogin만의 특수 사정).
@@ -22,7 +27,7 @@ declare(strict_types=1);
  *    노출은 피한다.
  *  - **권한코드**: 콤보박스(2026-08-25 추가 지시)로 표시/편집한다.
  *    선택지 원본은 `tAuth` 테이블(code/authname 컬럼)이고, 이 화면(그리드
- *    데이터를 매 페이지/검색마다 fetch하는 fetch_로그인.php)이 아니라
+ *    데이터를 매 페이지/검색마다 fetch하는 login_fetch.php)이 아니라
  *    **이 config 파일이 페이지가 열릴 때 한 번만** 조회해 <script> 안에
  *    직접 값 배열로 심어둔다 — tAuth는 사실상 고정된 참조 테이블(권한
  *    종류 목록)이라 그리드가 페이지를 넘기거나 검색할 때마다 매번 같이
@@ -64,7 +69,7 @@ declare(strict_types=1);
  * 컬럼이 실제로 따로 있다(2026-08-25 추가 확인) — 콤보 헤더도 우연히
  * 같은 이름이라 "권한"이 두 번 보이는 혼동이 생겨, 이 텍스트 "권한"
  * 컬럼(정확히 필드명이 '권한'인 것)만 columns에서 아예 뺀다(PK와 동일한
- * 스킵 방식). fetch_로그인.php가 서버 응답 자체에서도 이 필드를 빼므로
+ * 스킵 방식). login_fetch.php가 서버 응답 자체에서도 이 필드를 빼므로
  * 화면에 안 보이는 것과 서버가 안 보내는 것 둘 다 일치한다.
  *
  * **컬럼 정렬/콤마 포맷(2026-09-01 추가)**: AGGrid.js는 원래 컬럼 타입을
@@ -82,7 +87,10 @@ for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir
 }
 require_once $__bootDir . '/config/Path.php';
 unset($__bootDir);
-include_custom('DbContext', 'Crud', 'Str');
+include_custom('DbContext', 'Crud', 'Str', 'Login');
+
+// 로그인이 안 살아있으면 여기서 login.php로 이동하고 끝난다.
+Login::isAlive();
 
 $connectionName = null; // config/db.php의 'driver' 기본 접속을 따른다
 $loginGridDb = new DbContext($connectionName); // 컨테이너 페이지의 변수와 겹치지 않게 고유 이름
@@ -130,10 +138,16 @@ foreach ($allFields as $field) {
     if ($field === $primaryKey) {
         continue;
     }
+    if (stripos($field, 'code') !== false && preg_match($authorityCodePattern, $field) !== 1) {
+        // 필드명에 "code"가 들어간 컬럼은 표시하지 않는다(기초자료형 규칙,
+        // 2026-10-20). 단 권한code는 권한 콤보가 다루는 필드라 예외 —
+        // 숨기면 사용자에게 권한을 지정할 방법이 없어진다.
+        continue;
+    }
     if ($field === '권한') {
         // 권한코드(콤보가 다루는 FK)와는 별개인 순수 텍스트 "권한" 컬럼 —
         // 콤보 헤더와 이름이 겹쳐 "권한"이 두 번 보이는 혼동을 만들어서
-        // 감춘다(fetch_로그인.php가 서버 응답에서도 이미 뺌).
+        // 감춘다(login_fetch.php가 서버 응답에서도 이미 뺌).
         continue;
     }
     if ($nameField === null && $field === '이름') {
@@ -212,9 +226,26 @@ while (!$authCrud->eof()) {
 // 필드가 없는 스키마라면(이론상) 항상 강조 없음으로 안전하게 폴백.
 $usageFieldJson = $usageField !== null ? json_encode($usageField, JSON_UNESCAPED_UNICODE) : 'null';
 
-$fetchUrl = APP_BASE_URL . '/basicdata/로그인/fetch_로그인.php';
+$fetchUrl = APP_BASE_URL . '/basicdata/login/login_fetch.php';
+
+// 브라우저 캐시로 옛 AGGrid.js가 보이지 않게 수정시각을 쿼리스트링에 붙인다.
+$aggridJsPath = APP_BASE_DIR . '/src/js/aggrid/AGGrid.js';
+$aggridJsVersion = is_file($aggridJsPath) ? filemtime($aggridJsPath) : time();
 ?>
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>로그인</title>
+<!-- document.currentScript로 vendor 경로를 찾으므로 async/defer 없이 동기 로드 -->
+<script src="<?= APP_BASE_URL ?>/src/js/aggrid/AGGrid.js?v=<?= $aggridJsVersion ?>"></script>
 <style>
+html, body { margin: 0; height: 100%; }
+body { padding: 16px; box-sizing: border-box; font-family: 'Segoe UI', Inter, system-ui, -apple-system, sans-serif; }
+h1 { font-size: 1.1rem; margin: 0 0 12px; }
+
+
 /* AGGrid.js 기본 CSS는 건드리지 않고, 이 그리드(#aggrid-로그인)의 특정
    컬럼 두 개만 cellClass로 좁혀서 조정한다(2026-08-25 추가 지시). */
 
@@ -235,12 +266,17 @@ $fetchUrl = APP_BASE_URL . '/basicdata/로그인/fetch_로그인.php';
     cursor: pointer;
 }
 </style>
+</head>
+<body>
+<h1>로그인</h1>
+
+<div id="aggrid-로그인"></div>
 <script>
 // <input type="password">로 편집하는 커스텀 셀 에디터 — AG Grid Community의
 // agTextCellEditor에는 입력 타입을 password로 바꿀 표준 옵션이 없어서,
 // AG Grid Cell Editor Component 규약(init/getGui/afterGuiAttached/getValue)
 // 만 따르는 최소 구현을 직접 둔다. 이 화면(로그인) 전용이라 AGGrid.js 본체가
-// 아니라 여기(config_로그인.php)에 둔다.
+// 아니라 여기(login_entry.php)에 둔다.
 function PasswordCellEditor() {}
 PasswordCellEditor.prototype.init = function (params) {
     this.eInput = document.createElement('input');
@@ -255,9 +291,9 @@ PasswordCellEditor.prototype.getValue = function () { return this.eInput.value; 
 PasswordCellEditor.prototype.destroy = function () {};
 PasswordCellEditor.prototype.isPopup = function () { return false; };
 
-// tAuth 조회 결과 — 페이지 로드 시점에 config_로그인.php(PHP)가 이미 한 번
+// tAuth 조회 결과 — 페이지 로드 시점에 login_entry.php(PHP)가 이미 한 번
 // 조회해 여기 값으로 심어뒀다(그리드가 매 페이지/검색마다 다시 받는
-// fetch_로그인.php 응답과는 별개 경로). AUTH_CODES는 콤보의 선택 가능한
+// login_fetch.php 응답과는 별개 경로). AUTH_CODES는 콤보의 선택 가능한
 // 값(code) 목록, AUTH_LABEL_BY_CODE는 그 code를 authname으로 보여주기
 // 위한 조회 맵 — 둘 다 "권한" 컬럼의 cellEditorParams/valueFormatter가 쓴다.
 var AUTH_OPTIONS = <?= json_encode($authOptions, JSON_UNESCAPED_UNICODE) ?>;
@@ -379,3 +415,5 @@ foreach ($orderedColumns as $column) {
     ]
 });
 </script>
+</body>
+</html>

@@ -53,6 +53,45 @@ if (VariableBank.handles(pcmd)) return VariableBank.action(pcmd, pparams, psende
 
 셸 없이 한 페이지에서 직접 쓸 때는 `VariableBank.call(cmd, pparams, psender)`.
 
+### 간편 함수 — `setbank` / `getbank` (index.php)
+
+`setvalue`/`getvalue`를 인자 개체 없이 바로 부르는 index의 전역 함수.
+**속성(`pattname`)을 생략하면 `'value'`**다.
+
+| 함수 | 반환 |
+|---|---|
+| `setbank(별명, 값, 속성?)` | 성공하면 `true`, 실패하면 `null` |
+| `getbank(별명, 속성?)` | 값(없거나 실패하면 `null`). 폼/컨트롤이면 지금 열린 창/요소 |
+
+셸 `action()`으로도 부를 수 있다(`action_bank`가 위 함수로 넘긴다):
+
+| 셸이 받는 pcmd | pparams | 반환 |
+|---|---|---|
+| `'setbank'` | `{ pnickname, pvalue, pattname? }` | `setbank()`와 같음 |
+| `'getbank'` | `{ pnickname, pattname? }` | `getbank()`와 같음 |
+
+```js
+// 탭 화면(iframe)에서
+parent.setbank('userName', '홍길동');                 // value에 저장
+parent.setbank('pickedRoom', '창가', 'memo');          // memo 속성에 저장
+parent.getbank('userName');                            // '홍길동'
+parent.getbank('pickedRoom', 'memo');                  // '창가'
+parent.action('getbank', { pnickname: 'userName' }, window); // action 경로도 같음
+```
+
+**index가 미리 넣어 두는 값**: index가 열릴 때(좌측 메뉴를 만들기 전,
+`AUTH_STRING`을 심는 `<script>` 바로 아래 — 메뉴 필터가 `getauth`를 쓰므로)
+`setbank('auth', authstring)`으로 로그인 사용자의 `tAuth.authstring`을
+`'auth'` 별명에 저장한다(열 때마다 세션 값으로 덮어씀). 탭 화면에서는
+`parent.getbank('auth')`로 읽는다. 권한 유무만 필요하면 index의
+`getauth(권한명)`이 이 값으로 `true`/`false`를 돌려준다(`Auth::hasAuthority()`와
+같은 `;권한명;` 규칙). 화면 표시용 복사본일 뿐 — 실제 권한
+판단은 서버(PHP 세션, `Auth::hasAuthority()`)에서 한다.
+
+`preturnType`이나 실패 원인(`error`)이 필요하면 기존처럼
+`action('variableBank', { cmd: 'getvalue', ... })`를 쓴다 — 간편 함수는 값만
+돌려준다(원인은 `console.warn('[variableBank]', ...)`에 남는다).
+
 ## 자료 구조 (XML → JSON)
 
 VBA판 `cXml`(별명마다 노드 하나 + 속성들)을 JSON 개체 하나로 옮겼다.
@@ -196,4 +235,5 @@ variableBank**로 연다.
 
 - `src/variableBank/variableBank.js` — 저장소
 - `src/variableBank/variableBank_entry.php` — 연습 화면
-- `index.php` — 연결(script, 탭 iframe의 `data-tab-title`, action() default), 메뉴
+- `index.php` — 연결(script, 탭 iframe의 `data-tab-title`, action() default), 메뉴,
+  간편 함수 `setbank`/`getbank`와 action의 `setbank`/`getbank`(`action_bank`)

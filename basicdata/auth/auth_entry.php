@@ -2,7 +2,12 @@
 declare(strict_types=1);
 
 /**
- * [AGGrid 모듈용 프론트엔드 config — "권한"(tAuth, MSSQL deco DB) 그리드]
+ * [권한(tAuth, MSSQL deco DB) AGGrid 화면 — 메뉴 "기초자료 > 권한"]
+ * 구성: auth_entry.php(이 파일, 화면 + 프론트 config) + auth_fetch.php(CRUD).
+ * 원래 컨테이너 페이지에 include되던 config_권한.php였으나, 메뉴에서 바로
+ * 열 수 있도록 html 골격(AGGrid.js 로드, 그리드 div)까지 갖춘 독립 화면으로
+ * 바꿨다.
+ *
  * 바탕화면 deco권한.png(Access "권한" 편집 폼)를 웹으로 재현한다 —
  * 사용자 설명: 메뉴권한은 tAuth_ribbon에서, 일반권한은 tAuth_add에서 각각
  * 후보 목록을 가져와 체크박스로 고르고, 저장 시 체크된 항목들의
@@ -21,12 +26,12 @@ declare(strict_types=1);
  * 가벼운 커스텀 모달)과 같은 패턴 — AGGrid.js 본체를 전혀 안 건드리고
  * 이 파일 안에서 완결된다. 저장/삭제는 ActionBulk의 {rows, deletedCodes}
  * 계약을 그대로 재사용(레코드 1건짜리 배열만 보낸다는 점만 다름,
- * fetch_권한.php 참고) — 그리드가 아니라 모달이 fetch()를 직접 호출한다.
+ * auth_fetch.php 참고) — 그리드가 아니라 모달이 fetch()를 직접 호출한다.
  *
  * tAuth_ribbon/tAuth_add는 MS Access에서 직접 입력/관리되는 참조
  * 테이블이라 이 화면은 읽기만 한다(페이지가 열릴 때 한 번, 2_1이
  * tAuth를 콤보 원본으로 미리 읽어둔 것과 동일한 방식) — 그리드 데이터
- * fetch(fetch_권한.php)와는 완전히 별개 경로.
+ * fetch(auth_fetch.php)와는 완전히 별개 경로.
  *
  * **체크박스 → authstring 결합 규칙은 스크린샷에서 역산한 추정치다**
  * (실제 DB로 확인 못함): 각 항목의 authstring을 양쪽 `;`로 감싼 뒤
@@ -50,7 +55,10 @@ for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir
 }
 require_once $__bootDir . '/config/Path.php';
 unset($__bootDir);
-include_custom('DbContext', 'Crud');
+include_custom('DbContext', 'Crud', 'Login');
+
+// 로그인이 안 살아있으면 여기서 login.php로 이동하고 끝난다.
+Login::isAlive();
 
 $connectionName = null; // config/db.php의 'driver' 기본 접속을 따른다
 $authGridDb = new DbContext($connectionName); // 컨테이너 페이지의 변수와 겹치지 않게 고유 이름
@@ -108,11 +116,19 @@ $memoField = $memoField ?? 'memo';
  *    "항목 없음"만 보이면 원인을 알 수 없었는데, 이제 그 안에 진단 정보를
  *    같이 보여줘서 실제 DB 확인 없이도 원인을 좁힐 수 있게 함.
  *
- * @return array{items: array<int, array{label: string, authstring: string}>, fields: array<int, string>, rowCount: int, labelField: ?string}
+ * 2026-10-20 수정 — 테이블 자체가 DB에 없으면(실제로 tAuth_ribbon에서
+ * "테이블을 찾을 수 없습니다" Fatal error 발생) 화면 전체가 죽지 않도록
+ * 예외를 잡아 error로 돌려준다 — 그 목록만 "항목 없음 + 원인"으로 표시.
+ *
+ * @return array{items: array<int, array{label: string, authstring: string}>, fields: array<int, string>, rowCount: int, labelField: ?string, error: ?string}
  */
 $loadAuthCandidates = function (string $tableName) use ($authGridDb): array {
     $crud = new Crud($authGridDb);
-    $crud->init($tableName);
+    try {
+        $crud->init($tableName);
+    } catch (RuntimeException $e) {
+        return ['items' => [], 'fields' => [], 'rowCount' => 0, 'labelField' => null, 'error' => $e->getMessage()];
+    }
     $pk = $crud->getPrimaryKey();
     $fields = array_keys($crud->getSchema()['fields']);
 
@@ -154,7 +170,7 @@ $loadAuthCandidates = function (string $tableName) use ($authGridDb): array {
         }
     }
 
-    return ['items' => $items, 'fields' => $fields, 'rowCount' => $rowCount, 'labelField' => $labelField];
+    return ['items' => $items, 'fields' => $fields, 'rowCount' => $rowCount, 'labelField' => $labelField, 'error' => null];
 };
 
 $ribbonResult = $loadAuthCandidates('tAuth_ribbon');
@@ -162,9 +178,26 @@ $addResult = $loadAuthCandidates('tAuth_add');
 $ribbonItems = $ribbonResult['items'];
 $addItems = $addResult['items'];
 
-$fetchUrl = BOARD_BASE_URL . '/2_2/fetch_권한.php';
+$fetchUrl = APP_BASE_URL . '/basicdata/auth/auth_fetch.php';
+
+// 브라우저 캐시로 옛 AGGrid.js가 보이지 않게 수정시각을 쿼리스트링에 붙인다.
+$aggridJsPath = APP_BASE_DIR . '/src/js/aggrid/AGGrid.js';
+$aggridJsVersion = is_file($aggridJsPath) ? filemtime($aggridJsPath) : time();
 ?>
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>권한</title>
+<!-- document.currentScript로 vendor 경로를 찾으므로 async/defer 없이 동기 로드 -->
+<script src="<?= APP_BASE_URL ?>/src/js/aggrid/AGGrid.js?v=<?= $aggridJsVersion ?>"></script>
 <style>
+html, body { margin: 0; height: 100%; }
+body { padding: 16px; box-sizing: border-box; font-family: 'Segoe UI', Inter, system-ui, -apple-system, sans-serif; }
+h1 { font-size: 1.1rem; margin: 0 0 12px; }
+
+
 /* "편집"/"+ 행 추가"는 이 화면에서 안 쓴다(모달로 대신) — 항상 숨김. */
 #aggrid-권한 .ag-shell-mode-btn,
 #aggrid-권한 .ag-shell-add-btn {
@@ -249,6 +282,11 @@ $fetchUrl = BOARD_BASE_URL . '/2_2/fetch_권한.php';
 }
 .b22-modal-footer button.b22-modal-delete-btn:hover { background: #c85950; }
 </style>
+</head>
+<body>
+<h1>권한</h1>
+
+<div id="aggrid-권한"></div>
 <div class="b22-modal-overlay" id="b22-modal" hidden>
     <div class="b22-modal-box">
         <div class="b22-modal-header">
@@ -282,7 +320,7 @@ $fetchUrl = BOARD_BASE_URL . '/2_2/fetch_권한.php';
     </div>
 </div>
 <script>
-// tAuth_ribbon/tAuth_add — 페이지 로드 시점에 config_권한.php(PHP)가 이미
+// tAuth_ribbon/tAuth_add — 페이지 로드 시점에 auth_entry.php(PHP)가 이미
 // 한 번 조회해 심어둔 후보 목록(2_1의 AUTH_OPTIONS와 동일한 원칙 —
 // 그리드 데이터 fetch와는 별개 경로, 정적 참조 테이블이라 매번 다시 안
 // 받아온다).
@@ -291,8 +329,8 @@ var B22_ADD_ITEMS = <?= json_encode($addItems, JSON_UNESCAPED_UNICODE) ?>;
 // 항목이 비어 보일 때 원인을 화면에서 바로 확인하기 위한 진단 정보
 // (tAuth_ribbon/tAuth_add에서 실제로 발견된 컬럼 목록, 행 수, 명칭으로
 // 채택한 필드) — DB에 직접 접속할 방법이 없어 추가함.
-var B22_RIBBON_DEBUG = <?= json_encode(['fields' => $ribbonResult['fields'], 'rowCount' => $ribbonResult['rowCount'], 'labelField' => $ribbonResult['labelField']], JSON_UNESCAPED_UNICODE) ?>;
-var B22_ADD_DEBUG = <?= json_encode(['fields' => $addResult['fields'], 'rowCount' => $addResult['rowCount'], 'labelField' => $addResult['labelField']], JSON_UNESCAPED_UNICODE) ?>;
+var B22_RIBBON_DEBUG = <?= json_encode(['fields' => $ribbonResult['fields'], 'rowCount' => $ribbonResult['rowCount'], 'labelField' => $ribbonResult['labelField'], 'error' => $ribbonResult['error']], JSON_UNESCAPED_UNICODE) ?>;
+var B22_ADD_DEBUG = <?= json_encode(['fields' => $addResult['fields'], 'rowCount' => $addResult['rowCount'], 'labelField' => $addResult['labelField'], 'error' => $addResult['error']], JSON_UNESCAPED_UNICODE) ?>;
 var B22_PK_FIELD = <?= json_encode($primaryKey, JSON_UNESCAPED_UNICODE) ?>;
 var B22_AUTHNAME_FIELD = <?= json_encode($authnameField, JSON_UNESCAPED_UNICODE) ?>;
 var B22_MEMO_FIELD = <?= json_encode($memoField, JSON_UNESCAPED_UNICODE) ?>;
@@ -315,7 +353,9 @@ function b22Escape(value) {
 function b22RenderCheckList(containerId, items, existingAuthstring, debugInfo) {
     if (items.length === 0) {
         var msg = '항목 없음';
-        if (debugInfo) {
+        if (debugInfo && debugInfo.error) {
+            msg += ' (' + debugInfo.error + ')';
+        } else if (debugInfo) {
             msg += ' (테이블 행 수: ' + debugInfo.rowCount
                 + ', 명칭으로 쓴 컬럼: ' + (debugInfo.labelField || '없음')
                 + ', 발견된 전체 컬럼: ' + (debugInfo.fields.join(', ') || '없음') + ')';
@@ -457,3 +497,5 @@ new AGGrid({
     }
 });
 </script>
+</body>
+</html>

@@ -489,10 +489,11 @@ class Popup {
         color: #6b7280; cursor: pointer; padding: 0 14px;
         display: flex; align-items: center; justify-content: center;
     }
-    /* 커서가 올라가면 배경색을 반전시키고, 그 배경이 헤더(레이블) 전체
-       높이만큼 채워지게 한다(버튼이 header의 align-items:stretch로
-       이미 전체 높이만큼 늘어나 있어, 배경색만 주면 자연히 그렇게 된다). */
-    .wc-popup-close-btn:hover { background: #6b7280; color: #fff; }
+    /* 커서가 올라가면 빨간 바탕 + 흰 ×(2026-10-20 변경 — 원래 회색 #6b7280),
+       그 배경이 헤더(레이블) 전체 높이만큼 채워지게 한다(버튼이 header의
+       align-items:stretch로 이미 전체 높이만큼 늘어나 있어, 배경색만 주면
+       자연히 그렇게 된다). */
+    .wc-popup-close-btn:hover { background: #dc2626; color: #fff; }
     .wc-popup-body { padding: 16px; }
     .wc-popup-iframe { border: none; display: block; max-width: 100%; }
 }

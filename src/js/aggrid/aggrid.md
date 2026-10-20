@@ -66,8 +66,19 @@ UI 조정(툴바 색상/구분선/높이 등, `md/Board_ai.md` "AGGrid 툴바"�
 - **`AGGrid.js`가 스스로 갖고 있는 기본 외형/동작**(툴바 버튼 배색 — 저장/
   "+ 행 추가" 둘 다 옅은 파랑+짙은 글자(2026-08-26 변경 — "+ 행 추가"는
   원래 초록이었음)/삭제·편집취소 둘 다 옅은 빨강+흰 글자(2026-08-26
-  변경 — "편집취소"는 원래 무채색이었음)/"+ 행 추가"는 모드 무관하게
-  항상 보임/나머지 무채색, 검색창 안쪽 "×" 지우기 버튼, 테두리
+  변경 — "편집취소"는 원래 무채색이었음)/나머지 무채색, **툴바 모드
+  버튼(2026-10-20 변경) — 모드 전환 버튼은 항상 툴바 맨 앞이고 문구는
+  읽기전용일 때 "편집", 편집모드일 때 "잠금"(원래 "읽기모드")이다.
+  "+ 행 추가"는 편집모드에서만 보인다(원래 모드 무관 항상 보였고 읽기전용에서
+  누르면 편집모드로 자동 전환됐음). "잠금"을 누르면 저장 안 한 편집(dirty)이
+  있을 때 "편집취소"도 자동으로 함께 실행돼 서버 원본으로 되돌아간다**,
+  **안내 문구 숨김(2026-10-20 추가) — "편집을 취소했습니다."/"취소할 편집
+  내용이 없습니다."/"저장할 변경 사항이 없습니다."/"저장 중..."/"저장 완료"/
+  "삭제 중..."/"삭제 완료" 같은 안내 문구는 툴바에 안 나온다(`showInfoStatus:
+  true`로 켤 수 있음). "목록을 불러오지 못했습니다."/"저장 실패"/"저장 오류"/
+  "삭제 실패"/"삭제 오류"와 "이동" 도구의 "찾을 수 없습니다" 문구는 사용자가
+  알아야 하는 결과라 항상 나온다**,
+  검색창 안쪽 "×" 지우기 버튼, 테두리
   없이 그리드 바로 위 배치, 그리드 컬럼 사이 세로 구분선, 숫자처럼 보이는
   값의 천단위 콤마 자동 표시, 기본 읽기전용 시작, **컬럼 너비는 화면
   폭에 맞춰 고르게 늘리지 않고(flex 없음) 첫 데이터가 그려진 직후
@@ -106,6 +117,113 @@ UI 조정(툴바 색상/구분선/높이 등, `md/Board_ai.md` "AGGrid 툴바"�
 - `AGGrid.js`의 기본 외형 자체를 바꾸는 작업(예: 팔레트를 다시 바꾼다)을
   할 때는, 이 baseline(1_9)이 그 변경의 실제 검증 대상이 된다 — "1_9에서
   보이는 모습"이 곧 "이 모듈을 쓰는 모든 화면의 기본 모습"이라는 뜻이므로.
+
+## 기초자료형 — `basicdata/login/login_entry.php`가 표준 예시다
+
+**"기초자료형"**은 DB 테이블 하나를 AGGrid로 **검색·조회·추가·수정·삭제**하는
+화면을 만드는 정해진 틀이다(2026-10-20 명명). 표준 예시는
+`basicdata/login/{login_entry.php, login_fetch.php}`(tLogin 테이블)이다.
+### 요청 형식 — 매개변수 2개
+
+```
+name: login
+tablename: tLogin
+aggrid 기초자료형으로 해줘
+```
+
+| 매개변수 | 뜻 | 예 |
+|---|---|---|
+| `name` | 폴더/파일 이름에 쓰는 영문 소문자 식별자 | `login` |
+| `tablename` | 대상 DB 테이블 이름 | `tLogin` |
+
+이렇게 요청받으면 아래 두 파일을 만들고, **login_entry와 같은 방식으로
+제작한다**(아래 규칙 전부 적용):
+
+- `basicdata/<name>/<name>_entry.php` — 화면(html 골격 + 프론트 config).
+  다른 페이지에 include하는 조각이 아니라 **혼자 열리는 완결된 페이지**다.
+- `basicdata/<name>/<name>_fetch.php` — CRUD 엔드포인트(이 문서의 "서버
+  계약"/"서버 구현 패턴" 그대로). entry의 `$fetchUrl`이 이 파일을 가리킨다.
+
+### 파일/이름/메뉴
+
+- 폴더와 파일 이름은 `name` 하나로 통일한다 — 한글 폴더/파일명은 쓰지
+  않는다(tLogin → `login`, tAuth → `auth`).
+- `src/menu/menu.js`의 해당 메뉴 항목에 연결한다:
+  `{ title: '<메뉴명>', ribbon: 'button기초자료', src: 'basicdata/<name>/<name>_entry.php', themeParam: false }`.
+- 그리드 ID(`gridId`, `#aggrid-<gridId>`)는 메뉴명과 같게 둬도 된다
+  (예: `'로그인'`) — CSS 선택자가 이 ID에 묶이므로 한 번 정하면 바꾸지 않는다.
+
+### `<name>_entry.php` 구성(위에서 아래 순서)
+
+1. 부트스트랩 — `config/Path.php`를 찾아 올라가는 공통 for 루프 →
+   `include_custom('DbContext', 'Crud', 'Str', 'Login')`.
+2. `Login::isAlive();` — 로그인 안 됐으면 로그인 화면으로 보내고 끝.
+3. `$connectionName = null`(config/db.php 기본 접속) → `new DbContext()` →
+   `Crud::init('<tablename>')`로 **스키마를 직접 조회**한다. 컬럼을 코드에
+   하드코딩하지 않는다 — PK(`getPrimaryKey()`), 필드 목록, 필드별 SQL 타입을
+   여기서 얻는다.
+4. 컬럼 구성 규칙:
+   - PK 컬럼은 `columns`에 넣지 않는다(행 데이터엔 항상 있어 저장/삭제엔 지장 없음).
+   - **필드명에 `code`가 들어간 컬럼(대소문자 무관, `stripos`)도 `columns`에
+     넣지 않는다**(2026-10-20 추가). 화면에서만 숨기고 fetch 응답에서는 빼지
+     않는다 — PK/FK 값이 행 데이터에 그대로 실려 저장·삭제가 정상 동작해야
+     하므로. 단, 콤보처럼 화면에서 그 값을 직접 다뤄야 하는 컬럼은 예외로
+     둔다(예: login_entry의 `권한code` — 권한 콤보).
+   - 각 컬럼에 스키마 타입으로 `dataType`을 준다 —
+     `int/bigint/smallint/tinyint/decimal/numeric/float/real/money/smallmoney`
+     → `'number'`, 나머지 → `'string'`(login_entry의 `b21_data_type_for()`).
+     값 기준 추측으로 id 같은 문자 필드에 콤마가 붙는 오탐을 막는다.
+   - 기본은 스키마 순서 그대로, `editable: true`, `headerName`은 필드명.
+     "메모"는 AGGrid.js가 자동으로 맨 뒤로 보낸다. 요청이 있으면 순서를
+     고정하거나 특정 컬럼을 숨긴다(숨긴 컬럼은 fetch에서도 같이 뺀다).
+5. `$fetchUrl = APP_BASE_URL . '/basicdata/<name>/<name>_fetch.php'`,
+   AGGrid.js 캐시 방지 버전(`filemtime`)을 구한다.
+6. html — `<head>`에 AGGrid.js를 **동기 로드**(async/defer 금지 —
+   `document.currentScript`로 vendor 경로를 찾음), 공통 body 스타일
+   (`padding:16px`, `h1 1.1rem`)과 이 화면 전용 CSS(`#aggrid-<gridId>`로
+   범위 제한). `<body>`에 `<h1>메뉴명</h1>` + `<div id="aggrid-<gridId>"></div>`.
+7. `new AGGrid({...})` — baseline 값 그대로:
+   `fetchMode: 'paged'`, `pageSize: 100`, `autoFitBottomGap: 40`,
+   `primaryKey`/`fetchUrl`은 PHP가 `json_encode`로 심는다.
+
+### `<name>_fetch.php` 구성
+
+- 부트스트랩 → `include_custom('DbContext', 'Board', 'Crud', 'ActionBulk', 'BoardConfig')`.
+- `Crud::init()`으로 스키마 조회 → 표시 필드(숨김 컬럼 제외)로
+  `BoardConfig`(`tableName`/`primaryKey`/`columns`/`searchFields`/`fields`)를 채운다.
+  민감 필드(비밀번호 등)는 표시는 하더라도 `searchFields`에서는 뺀다.
+- `$_GET['action']`(`list_paged`|`list_all`|`save`|`delete`)으로 확정 후
+  `switch` — 없으면 `REQUEST_METHOD`/`mode`로 추정.
+  - `save`/`delete` → `(new ActionBulk($crud, $config))->handle()`.
+  - `list_all`/`list_paged` → `Board`로 조회. `Board::getRows()`는 `SELECT *`라
+    숨긴 컬럼이 새지 않도록 `getArrayColumns()`로 한 번 더 걸러 응답한다.
+
+### 특수 컬럼(필요할 때만 — login_entry에 구현 예시가 있음)
+
+| 종류 | 판정(필드명) | 처리 |
+|---|---|---|
+| 비밀번호 | `/pw\|pass\|암호\|비밀번호/i` | `PasswordCellEditor`(type=password), 목록은 `••••••••` 마스킹 |
+| 참조 콤보 | 요청 시(예: `권한code` → tAuth) | 페이지 로드 때 참조 테이블을 한 번 읽어 `<script>`에 심고, `agSelectCellEditor` + `valueFormatter`로 "값은 code, 표시는 이름" |
+| 사용여부 체크박스 | `/사용여부\|사용유무/i` | `agCheckboxCellRenderer/Editor`, `valueGetter`는 `Str::TRUE_STRINGS` 규칙으로 bool, `valueSetter`는 1/0 |
+| 조건부 강조 | 요청 시 | 컬럼별 `cellStyle` 함수(행 단위 서식은 `conditionalFormats`) |
+
+### 여러 테이블을 한 화면에 — `basicdata/status/`가 예시
+
+테이블 여러 개를 한 entry에 그리드 여러 개로 보여줄 때(2026-10-20, 상태
+화면 — tb상태_문의/문의내역/견적/수주/발주 5개):
+
+- `<name>_tables.php` — 키 → `{table, title}` 목록을 돌려주는 파일 하나.
+  entry와 fetch가 같이 쓴다.
+- fetch는 파일 하나로 두고 `?t=<키>`로 테이블을 고른다. **목록에 없는 키는
+  거부**(임의 테이블 접근 차단). entry는 그리드마다
+  `fetchUrl: '.../<name>_fetch.php?t=<키>'`를 준다 — AGGrid.js가 fetchUrl에
+  `?`가 있으면 `&`로 잇는다(`_fetchUrlWith`, 조회/저장/삭제 모두).
+- 그리드가 여럿이라 `autoFitBottomGap` 대신 고정 `height`를 쓴다.
+- 테이블 하나가 없어도 화면 전체가 죽지 않게 `Crud::init()`을 try/catch로
+  감싸고, 그 칸에만 원인을 표시한다.
+
+참조 테이블이 DB에 없을 수 있으면 `Crud::init()`을 try/catch로 감싸 화면
+전체가 죽지 않게 한다(`basicdata/auth/auth_entry.php`의 `$loadAuthCandidates` 참고).
 
 ## 서버 계약
 
@@ -214,7 +332,9 @@ new AGGrid({
   minHeight: 200,                     // autoFitBottomGap 적용 시 최소 높이
   defaultMode: 'view',               // 'view'(기본, 읽기전용) | 'edit'
   showGoToTool: false,                // 기본 숨김. true면 "키값으로 이동" 도구 표시
-  showAddRow: true,                   // 기본 표시("+ 행 추가", 모드 무관 항상 노출). false면(2026-08-26 추가) 이 버튼 자체를 안 그림 — 신규 레코드를 만들 일이 없는 화면(예: 아가씨단가/밴드단가)에서 사용
+  newRowDefaults: {},                 // (2026-10-20 추가) "+ 행 추가"한 새 행에 미리 채울 값 {필드: 값}. 화면에 안 보이는 FK를 부모 키로 채울 때 사용(예: 고객사 팝업의 담당자 그리드 { parentcode: 고객사키 })
+  showInfoStatus: false,              // 기본 숨김(2026-10-20 추가). true면 "편집을 취소했습니다."/"저장 완료" 등 안내 문구 표시(실패/오류 문구는 옵션과 무관하게 항상 표시)
+  showAddRow: true,                   // 기본 표시("+ 행 추가", 편집모드에서만 노출). false면(2026-08-26 추가) 이 버튼 자체를 안 그림 — 신규 레코드를 만들 일이 없는 화면(예: 아가씨단가/밴드단가)에서 사용
   showDeleteColumn: true,             // 기본 표시(edit 모드에서 행별 "삭제" 컬럼). false면(2026-08-26 추가) 그 컬럼 자체를 안 그림 — 레코드를 지울 일이 없는 화면(예: 아가씨단가/밴드단가)에서 사용
   onRowDblClick: (values, key) => {}, // view 모드에서 행 더블클릭 시(이벤트 규칙 주입)
   onReady: (grid) => {},              // 툴바/그리드 DOM 구성이 끝난 뒤 1회 호출(2026-08-25 추가) — 아래 "onReady" 항목 참고
@@ -294,6 +414,7 @@ new AGGrid({
 | `AGGrid.instance(gridId)` | (static) 식별자로 등록된 인스턴스를 찾는다. 없으면 `null`. |
 | `requery()` | 목록을 처음부터 다시 불러온다(검색 확정 시 내부적으로도 호출). 이 인스턴스만 갱신되고 같은 페이지의 다른 그리드는 전혀 안 건드린다. |
 | `setExtraQuery(obj)` (2026-08-26 추가) | `searchKeyword` 외에 서버 요청(GET 쿼리)에 추가로 실어 보낼 키/값을 설정하고 즉시 `requery()`한다. 예: 라디오버튼 같은 화면 고유 필터를 `AGGrid.instance('직원').setExtraQuery({type: '팀장'})`처럼 전달 — 서버(fetch 엔드포인트)가 이 값을 어떻게 해석할지는 화면마다 다르다(`fetch_직원.php` 참고). `{}`를 넘기면 필터 해제. |
+| `destroy()` (2026-10-20 추가) | AG Grid 인스턴스를 정리하고 `AGGrid.instances`에서 뺀다. 팝업 안에 만든 그리드를 팝업이 닫힐 때 치우는 용도(컨테이너 DOM은 호출부가 지운다). 예: `basicdata/customer/customer_entry.php`의 고객사 팝업. |
 | `setMode(isEdit: boolean)` | edit ↔ view 전환. 저장 안 한 dirty 상태는 유지된다. |
 | `selectRow(key: string\|number\|null)` | key에 해당하는 행을 "현재 행"으로 표시(파란 강조)하고 화면에 스크롤한다. **외부에서 호출 가능** — `AGGrid.instance('회원').selectRow('8')`. `null`이면 해제. |
 | `addRow()` | 빈 신규 행을 상단 고정(pinnedTopRowData)으로 추가한다(edit 모드에서 씀). |
@@ -312,13 +433,15 @@ new AGGrid({
 
 ## 상호작용 요약
 
-- **편집/읽기모드**: 기본은 **읽기전용**(요청에 따른 기본값). "+ 행 추가"
-  (저장 버튼과 동일한 옅은 파랑, 2026-08-26 변경 — 원래 초록) 버튼은
-  "편집" 버튼보다 앞에 **모드와 무관하게 항상** 떠 있다 —
-  view 모드에서 눌러도 자동으로 edit로 전환된 뒤 행이 추가된다(아래 "행
-  추가/저장/삭제" 참고). 툴바 "편집" 버튼으로 전환하면 그 뒤로 "편집취소"/
-  "저장" 버튼(이 순서, "편집취소"가 "저장" 바로 왼쪽)과 행별 "삭제" 컬럼이
-  나타난다.
+- **편집/읽기모드**: 기본은 **읽기전용**(요청에 따른 기본값)이고, 이때
+  툴바 왼쪽엔 "편집" 버튼만 있다. "편집" 버튼으로 전환하면 그 버튼은
+  "잠금"(누르면 다시 읽기전용 — 저장 안 한 편집이 있으면 "편집취소"도
+  자동으로 함께 실행, 2026-10-20 추가)으로 바뀌고, 뒤에 "+ 행 추가"(저장 버튼과
+  동일한 옅은 파랑, 2026-08-26 변경 — 원래 초록)/"편집취소"/"저장" 버튼
+  (이 순서)과 행별 "삭제" 컬럼이 나타난다. 모드 전환 버튼은 항상 맨 앞이다
+  (2026-10-20 변경 — 원래 "+ 행 추가"가 모드 무관하게 맨 앞에 항상 떠
+  있었고 view 모드에서 누르면 자동으로 edit로 전환됐음, edit 모드의 전환
+  버튼 문구는 "읽기모드"였음).
 - **편집취소**: dirty 행(편집한 기존 행 + 아직 저장 안 한 신규 행 초안)
   전부를 서버로 안 보내고 원래 값으로 되돌린다. dirty 플래그만 지우는
   게 아니라 `requery()`(서버 원본 재조회)를 그대로 써서, 이미
@@ -350,9 +473,9 @@ new AGGrid({
   안쪽 오른편의 **"×"(지우기) 버튼**은 이와 달리 클릭 즉시 입력값을 비우고
   **바로 재조회**(빈 키워드로 검색 = 전체 목록)까지 실행한다 — 포커스
   초기화는 "아직 지우는 중"이고 ×는 "확정된 지우기 동작"이라는 차이.
-- **행 추가/저장/삭제**: "+ 행 추가"는 모드 무관하게 항상 보이는 버튼이고,
-  view 모드에서 누르면 `setMode(true)`로 자동 전환된 뒤 실행된다(사용자가
-  먼저 "편집"을 누를 필요가 없음). 화면 맨 위 고정행에만 초안을 만든다
+- **행 추가/저장/삭제**: "+ 행 추가"는 편집모드에서만 보이는 버튼이다
+  (2026-10-20 변경 — 원래는 모드 무관하게 보였고 view 모드에서 누르면
+  자동으로 edit로 전환됐음). 화면 맨 위 고정행에만 초안을 만든다
   (서버 미접촉). "저장"은 dirty 행 + 고정행 초안을 한 번에 POST, 성공하면
   전부 `requery()`로 서버 최신 상태를 다시 받아온다(실패분이 있으면
   `requery()`를 안 해서 값이 그대로 남는다 — 고쳐서 재시도 가능). 행별
@@ -412,8 +535,8 @@ new AGGrid({
 `border-radius:6px`, 호버 `#c85950`)으로 항상 눈에 띄게 한다
 (2026-08-26 변경 — "편집취소"는 원래 무채색 보조버튼이었으나 "빨간색으로"
 지시로 삭제와 같은 빨강 계열로 통일, "값이 사라지는 되돌릴 수 없는
-방향"이라는 공통점을 색으로도 표시). "+ 행 추가"는 모드 무관하게 항상
-보이는 버튼이라 여전히 강조색을 유지한다(2026-08-25 추가 지시 근거는
+방향"이라는 공통점을 색으로도 표시). "+ 행 추가"는 편집모드의 주된
+동작이라 여전히 강조색을 유지한다(2026-08-25 추가 지시 근거는
 그대로), "이동"
 입력창은 연한 회색(`#d1d5db`) 박스 테두리를 갖고 포커스 시 진한 회색
 테두리+box-shadow로 강조되는 반면, **검색창은 박스 테두리 대신
@@ -494,3 +617,5 @@ new AGGrid({
 - `public/test/Board/1_9/{config_회원.php, fetch_회원.php}` — 실제 사용
   예시(프론트엔드 config + 서버 CRUD 엔드포인트).
 - `public/test/Layout/test1/content1_9.php` — 컨테이너 페이지 예시.
+- `basicdata/login/{login_entry.php, login_fetch.php}` — **기초자료형**
+  표준 예시(위 "기초자료형" 참고).

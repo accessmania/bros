@@ -12,7 +12,7 @@ PHP로 옮긴 것이다.
 DB 값이나 사용자 입력은 같은 "참"이라도 `1`/`'1'`/`true`/`'True'`/`-1`
 (Access Yes/No)처럼 여러 모양으로 온다. 판단 규칙을 화면/클래스마다 따로
 두면 서로 다르게 판정한다 — 실제로 로그인(`Login.php`)과 로그인 관리
-그리드(`config_로그인.php`)가 각자 `v === 1 || v === '1' || v === true`를
+그리드(`login_entry.php`)가 각자 `v === 1 || v === '1' || v === true`를
 갖고 있다가 둘 다 `-1`을 놓쳐 "사용 정지"로 오판한 일이 있었다. 이제
 판정은 이 클래스 한 곳의 규칙을 쓴다.
 
@@ -107,7 +107,7 @@ Str::cdata('-1', '불린yn');                  // 'Yes'
 화면(JS)에서 같은 값을 판정할 때 규칙이 다르면 같은 버그가 다시 생긴다.
 현재 적용된 곳:
 
-- `basicdata/로그인/config_로그인.php` — 사용여부 체크박스와 id 강조가
+- `basicdata/login/login_entry.php` — 사용여부 체크박스와 id 강조가
   `b21ToBool()`을 쓴다. 참 문자열 목록은 `Str::TRUE_STRINGS`를
   `json_encode()`로 그대로 심어서 PHP와 목록이 어긋나지 않는다.
 
@@ -118,11 +118,11 @@ JS 이식본이다(변환 불가 → 0). 여러 화면에서 JS 불린/날짜 �
 ## 적용 상태
 
 - `Login::authentication()`의 사용여부 검사 → `Str::toBool()` 직접 호출
-- `config_로그인.php`의 사용여부 판정 → `b21ToBool()`(같은 규칙)
+- `login_entry.php`의 사용여부 판정 → `b21ToBool()`(같은 규칙)
 
 ## 관련 파일
 
 - `src/Str/Str.php` — 이 클래스
 - `src/Login/Login.php` — 사용여부 판정
-- `basicdata/로그인/config_로그인.php` — 그리드 체크박스 판정
+- `basicdata/login/login_entry.php` — 그리드 체크박스 판정
 - `src/js/DateTime/DateTime.js` — JS `DateTime.cdata()`(숫자 변환)

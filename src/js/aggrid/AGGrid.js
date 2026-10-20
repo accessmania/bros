@@ -95,7 +95,11 @@ class AGGrid {
         // 요청대로 기본은 읽기전용(view) — 편집은 툴바 버튼으로 명시적으로 켠다.
         this.mode = options.defaultMode === 'edit' ? 'edit' : 'view';
         this.showGoToTool = options.showGoToTool === true;
-        // [2026-08-26 추가] "+ 행 추가"는 기본은 항상 표시(기존 동작 유지)지만,
+        // [2026-10-20 추가] "편집을 취소했습니다."/"저장 완료" 같은 안내
+        // 문구는 기본형에서 안 보인다 — 필요한 화면만 true로 켠다. 실패/
+        // 오류 문구는 이 옵션과 무관하게 항상 보인다(_setInfoStatus 참고).
+        this.showInfoStatus = options.showInfoStatus === true;
+        // [2026-08-26 추가] "+ 행 추가"는 기본은 edit 모드에서 표시지만,
         // 신규 레코드를 만들 일이 없는 화면(예: 아가씨단가/밴드단가 —
         // 행추가 제거 요청)은 이 옵션으로 꺼둘 수 있다.
         this.showAddRow = options.showAddRow !== false;
@@ -121,6 +125,10 @@ class AGGrid {
         // 너무 이르다 — 첫 데이터 블록이 실제로 그려진 뒤에 불러야 하는
         // 콜백(예: gridApi.autoSizeAllColumns())을 위한 훅.
         this.onFirstDataRendered = typeof options.onFirstDataRendered === 'function' ? options.onFirstDataRendered : null;
+        // [2026-10-20 추가] "+ 행 추가"로 만든 새 행에 미리 채울 값({필드: 값}).
+        // 화면에 안 보이는 FK(예: 고객사 담당자의 parentcode)를 부모 키로
+        // 자동으로 채울 때 쓴다 — 숨긴 컬럼은 사용자가 입력할 수 없으므로.
+        this.newRowDefaults = options.newRowDefaults && typeof options.newRowDefaults === 'object' ? options.newRowDefaults : {};
 
         this.searchKeyword = '';
         // searchKeyword(자유 검색어) 외에 화면이 서버 요청에 추가로 실어
@@ -145,6 +153,20 @@ class AGGrid {
                     el.innerHTML = '<p class="ag-shell-error">AG Grid 로드 실패: ' + this._escape(err.message) + '</p>';
                 }
             });
+    }
+
+    /** [2026-10-20 추가] 그리드를 없앤다 — AG Grid 인스턴스를 정리하고
+     * AGGrid.instances에서 뺀다. 팝업 안에 만든 그리드를 팝업이 닫힐 때
+     * 치우는 용도(컨테이너 DOM 자체는 호출부가 지운다). 라이브러리 로드
+     * 전에 불려도(gridApi 없음) 등록만 지운다. */
+    destroy() {
+        if (this.gridApi) {
+            this.gridApi.destroy();
+            this.gridApi = null;
+        }
+        if (AGGrid.instances[this.gridId] === this) {
+            delete AGGrid.instances[this.gridId];
+        }
     }
 
     /** gridId로 등록된 인스턴스를 찾는다(없으면 null). 외부에서 특정 그리드
@@ -260,14 +282,17 @@ class AGGrid {
         const isEdit = this.mode === 'edit';
         const html = [];
         html.push('<div class="ag-shell-toolbar-left">');
-        // "+ 행 추가"는 모드와 무관하게 항상 보인다(편집 버튼보다 앞) —
-        // view 모드에서 눌러도 되게 클릭 핸들러가 먼저 edit로 전환한 뒤
-        // addRow()를 호출한다(_bindToolbarEvents 참고). showAddRow:false를
-        // 주면(2026-08-26 추가) 이 버튼 자체를 안 그린다.
-        if (this.showAddRow) {
+        // 모드 전환 버튼은 맨 앞 — view에선 "편집", edit에선 "잠금"(다시
+        // view로). 2026-10-20 변경: 원래 "+ 행 추가" 뒤에 있었고 edit 모드
+        // 문구는 "읽기모드"였음.
+        html.push('<button type="button" class="ag-shell-mode-btn">' + (isEdit ? '잠금' : '편집') + '</button>');
+        // "+ 행 추가"는 edit 모드에서만 보인다 — 2026-10-20 변경: 원래 모드
+        // 무관하게 항상 보였으나, 기본형(view)에서는 빼고 "편집"으로
+        // 들어갔을 때만 나타나게 함. showAddRow:false를 주면(2026-08-26
+        // 추가) edit 모드에서도 이 버튼 자체를 안 그린다.
+        if (isEdit && this.showAddRow) {
             html.push('<button type="button" class="ag-shell-add-btn">+ 행 추가</button>');
         }
-        html.push('<button type="button" class="ag-shell-mode-btn">' + (isEdit ? '읽기모드' : '편집') + '</button>');
         if (isEdit) {
             // [2026-08-26 추가] DOM엔 항상 넣어두되(그래야 클릭 핸들러
             // 바인딩/버튼 개수 계산이 단순함), dirty가 없으면(막 편집모드로
@@ -372,21 +397,27 @@ class AGGrid {
 
     _bindToolbarEvents(toolbarEl) {
         toolbarEl.querySelector('.ag-shell-mode-btn').addEventListener('click', () => {
-            this.setMode(this.mode !== 'edit');
+            if (this.mode !== 'edit') {
+                this.setMode(true);
+                return;
+            }
+            // "잠금" — 저장 안 한 편집이 있으면 편집취소도 함께 한다
+            // (2026-10-20 추가). 모드를 먼저 바꿔 툴바를 다시 그린 뒤
+            // 취소해야, showInfoStatus를 켠 화면에서 "편집을 취소했습니다."
+            // 문구가 view 툴바에 남는다.
+            const hasDirty = this._dirtyCount() > 0;
+            this.setMode(false);
+            if (hasDirty) {
+                this.cancelEdits();
+            }
         });
 
-        // "+ 행 추가"는 showAddRow가 false면 애초에 안 그려지므로(위
-        // _renderToolbar() 참고) 버튼이 없을 수 있다 — null 체크 필요.
-        // 있으면(기본) 모드 무관하게 항상 동작: view 모드에서 누르면
-        // 먼저 edit로 전환한 뒤(setMode가 툴바를 다시 그리므로 이 버튼도
-        // 새로 바뀐다) addRow()를 호출한다. 이미 edit 모드면 전환 없이
-        // 바로 addRow()만 실행된다.
+        // "+ 행 추가"는 view 모드이거나 showAddRow가 false면 애초에 안
+        // 그려지므로(위 _renderToolbar() 참고) 버튼이 없을 수 있다 — null
+        // 체크 필요. 그려졌다면 이미 edit 모드이므로 바로 addRow()만 실행한다.
         const addBtn = toolbarEl.querySelector('.ag-shell-add-btn');
         if (addBtn) {
             addBtn.addEventListener('click', () => {
-                if (this.mode !== 'edit') {
-                    this.setMode(true);
-                }
                 this.addRow();
             });
         }
@@ -445,6 +476,15 @@ class AGGrid {
         if (el) {
             el.textContent = message || '';
         }
+    }
+
+    /** 안내(성공/진행) 문구 — showInfoStatus가 꺼져 있으면(기본형) 문구
+     * 대신 빈 값으로 지운다. 그냥 무시하지 않고 지우는 이유는, 이전에
+     * 떠 있던 "저장 실패" 같은 오류 문구가 재시도 성공 뒤에도 남아 있지
+     * 않게 하기 위함. 실패/오류 문구는 이 함수가 아니라 _setStatus()로
+     * 직접 띄운다. */
+    _setInfoStatus(message) {
+        this._setStatus(this.showInfoStatus ? message : '');
     }
 
     // ------------------------------------------------------------------
@@ -682,7 +722,7 @@ class AGGrid {
                     query.sort = sortEntry.colId;
                     query.dir = sortEntry.sort;
                 }
-                fetch(this.fetchUrl + '?' + AGGrid._toQueryString(query), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                fetch(this._fetchUrlWith(AGGrid._toQueryString(query)), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
                     .then((res) => res.json())
                     .then((data) => {
                         params.successCallback(data.rows || [], typeof data.lastRow === 'number' ? data.lastRow : -1);
@@ -694,7 +734,7 @@ class AGGrid {
 
     _loadAll() {
         const query = Object.assign({ action: 'list_all', mode: 'all', q: this.searchKeyword }, this.extraQuery);
-        return fetch(this.fetchUrl + '?' + AGGrid._toQueryString(query), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        return fetch(this._fetchUrlWith(AGGrid._toQueryString(query)), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then((res) => res.json())
             .then((data) => {
                 this.gridApi.setGridOption('rowData', data.rows || []);
@@ -947,6 +987,7 @@ class AGGrid {
                 draft[col.field] = '';
             }
         });
+        Object.assign(draft, this.newRowDefaults);
         this._pendingNewRows.push(draft);
         this.gridApi.setGridOption('pinnedTopRowData', this._pendingNewRows.slice());
         this._updateSaveButtonState();
@@ -961,14 +1002,14 @@ class AGGrid {
      * 있으면 확인창 없이 곧바로 실행한다(요청에 따라 확인 절차 없음). */
     cancelEdits() {
         if (this._dirtyCount() === 0) {
-            this._setStatus('취소할 편집 내용이 없습니다.');
+            this._setInfoStatus('취소할 편집 내용이 없습니다.');
             return Promise.resolve();
         }
         if (this.gridApi) {
             // 취소이므로 열려있는 편집기는 확정(commit)이 아니라 폐기한다.
             this.gridApi.stopEditing(true);
         }
-        this._setStatus('편집을 취소했습니다.');
+        this._setInfoStatus('편집을 취소했습니다.');
         return this.requery();
     }
 
@@ -1002,14 +1043,14 @@ class AGGrid {
         });
 
         if (rows.length === 0) {
-            this._setStatus('저장할 변경 사항이 없습니다.');
+            this._setInfoStatus('저장할 변경 사항이 없습니다.');
             return Promise.resolve();
         }
 
-        this._setStatus('저장 중...');
+        this._setInfoStatus('저장 중...');
         // action=save는 쿼리스트링(URL)에 실린다 — POST 본문(JSON body)과는
         // 별개 채널이라 body 스키마({rows, deletedCodes})는 그대로 유지된다.
-        return fetch(this.fetchUrl + '?action=save', {
+        return fetch(this._fetchUrlWith('action=save'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
             body: JSON.stringify({ rows: rows, deletedCodes: [] }),
@@ -1028,7 +1069,7 @@ class AGGrid {
                     window.alert('일부 저장에 실패했습니다:\n' + failures.join('\n'));
                     return;
                 }
-                this._setStatus('저장 완료');
+                this._setInfoStatus('저장 완료');
                 this.requery();
             })
             .catch(() => {
@@ -1055,8 +1096,8 @@ class AGGrid {
         if (key === '' || !window.confirm('이 행을 삭제하시겠습니까?')) {
             return;
         }
-        this._setStatus('삭제 중...');
-        fetch(this.fetchUrl + '?action=delete', {
+        this._setInfoStatus('삭제 중...');
+        fetch(this._fetchUrlWith('action=delete'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
             body: JSON.stringify({ rows: [], deletedCodes: [key] }),
@@ -1065,7 +1106,7 @@ class AGGrid {
             .then((data) => {
                 const result = (data.deleteResults || [])[0];
                 if (result && result.success) {
-                    this._setStatus('삭제 완료');
+                    this._setInfoStatus('삭제 완료');
                     this.requery();
                 } else {
                     this._setStatus('삭제 실패');
@@ -1104,6 +1145,14 @@ class AGGrid {
             return value == null ? '' : value;
         }
         return Number(value).toLocaleString('ko-KR');
+    }
+
+    /** fetchUrl 뒤에 쿼리스트링을 붙인다 — fetchUrl에 이미 '?'가 있으면
+     * (예: 한 fetch 파일이 여러 테이블을 맡아 `status_fetch.php?t=inquiry`
+     * 처럼 고정 파라미터를 싣는 경우, 2026-10-20 추가) '&'로 잇는다. 조회/
+     * 저장/삭제 요청 모두 이 함수로 주소를 만든다. */
+    _fetchUrlWith(queryString) {
+        return this.fetchUrl + (this.fetchUrl.indexOf('?') === -1 ? '?' : '&') + queryString;
     }
 
     static _toQueryString(obj) {

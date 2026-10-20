@@ -12,8 +12,8 @@
  *                     **메뉴 전체에서 유일해야 한다**
  *        ribbon       이 메뉴를 볼 수 있는 권한 — tAuth.authstring의 리본 메뉴
  *                     항목 중 버튼 이름(예: 'tabBROSPOWER;group업무;button송금'의
- *                     'button송금'). 로그인 사용자의 리본 버튼 목록(index.php가
- *                     Auth::getRibbonButtons()로 넘김)에 있어야 보인다. 생략하면
+ *                     'button송금'). index의 getauth(ribbon)이 true여야
+ *                     보인다. 생략하면
  *                     권한과 상관없이 항상 보인다(개발용 화면 등).
  *                     마스터 권한이면 ribbon과 상관없이 모든 메뉴가 보인다.
  *                     보이는 항목이 하나도 없는 분류는 분류째 안 보인다.
@@ -35,6 +35,7 @@ var MENU_JSON = {
         { title: '발주', ribbon: 'button업무', src: null },
         { title: '선직미입고', ribbon: 'button업무', src: null },
         { title: '납품출하대기', ribbon: 'button업무', src: null },
+        { title: '일정', ribbon: 'button일정', src: 'src/js/Calendar/Calendar_entry.php', themeParam: false },
       ],
     },
     {
@@ -74,10 +75,9 @@ var MENU_JSON = {
       ],
     },
     {
-      name: '일정 및 기타',
+      name: '기타자료',
       group: '업무',
       items: [
-        { title: '일정', ribbon: 'button일정', src: null },
         { title: '고객사목록', ribbon: 'button고객사', src: null },
         { title: '제조사목록', ribbon: 'button제조사', src: null },
         { title: 'ECount', ribbon: 'buttonECount', src: null },
@@ -87,17 +87,17 @@ var MENU_JSON = {
       name: '기초자료',
       group: '기초자료',
       items: [
-        { title: '로그인', ribbon: 'button기초자료', src: null },
-        { title: '권한', ribbon: 'button기초자료', src: null },
-        { title: '제품', ribbon: 'button기초자료', src: null },
-        { title: '고객사', ribbon: 'button기초자료', src: null },
-        { title: '고객사 직원목록', ribbon: 'button기초자료', src: null },
-        { title: '제조사', ribbon: 'button기초자료', src: null },
-        { title: '상태', ribbon: 'button기초자료', src: null },
-        { title: 'API', ribbon: 'button기초자료', src: null },
-        { title: '운임표', ribbon: 'button기초자료', src: null },
-        { title: '필드감추기', ribbon: 'button기초자료', src: null },
-        { title: '통화단위', ribbon: 'button기초자료', src: null },
+        { title: '로그인', ribbon: 'button기초자료', src: 'basicdata/login/login_entry.php', themeParam: false },
+        { title: '권한', ribbon: 'button기초자료', src: 'basicdata/auth/auth_entry.php', themeParam: false },
+        { title: '제품', ribbon: 'button기초자료', src: 'basicdata/product/product_entry.php', themeParam: false },
+        { title: '고객사', ribbon: 'button기초자료', src: 'basicdata/customer/customer_entry.php', themeParam: false },
+        { title: '고객사 직원목록', ribbon: 'button기초자료', src: 'basicdata/customer_staff/customer_staff_entry.php', themeParam: false },
+        { title: '제조사', ribbon: 'button기초자료', src: 'basicdata/maker/maker_entry.php', themeParam: false },
+        { title: '상태', ribbon: 'button기초자료', src: 'basicdata/status/status_entry.php', themeParam: false },
+        { title: 'API', ribbon: 'button기초자료', src: 'basicdata/api/api_entry.php', themeParam: false },
+        { title: '운임표', ribbon: 'button기초자료', src: 'basicdata/freight/freight_entry.php', themeParam: false },
+        { title: '필드감추기', ribbon: 'button기초자료', src: 'basicdata/fieldvisible/fieldvisible_entry.php', themeParam: false },
+        { title: '통화단위', ribbon: 'button기초자료', src: 'basicdata/currency/currency_entry.php', themeParam: false },
       ],
     },
     {
@@ -113,24 +113,23 @@ var MENU_JSON = {
 };
 
 /**
- * 로그인 사용자의 리본 버튼 목록(ribbonButtons)으로 메뉴를 거른 새 메뉴를
- * 돌려준다(원본 MENU_JSON은 건드리지 않는다).
- *  - isMaster(마스터 권한)면 거르지 않고 모든 메뉴를 그대로 돌려준다.
- *  - ribbon이 있는 항목은 ribbonButtons에 그 값이 있을 때만 남긴다.
+ * 권한 판단 함수(hasAuth — index의 getauth(권한명) → true/false)로 메뉴를
+ * 거른 새 메뉴를 돌려준다(원본 MENU_JSON은 건드리지 않는다).
+ *  - hasAuth('마스터')면 거르지 않고 모든 메뉴를 그대로 돌려준다.
+ *  - ribbon이 있는 항목은 hasAuth(ribbon)이 true일 때만 남긴다.
  *  - ribbon이 없는 항목은 항상 남긴다.
  *  - 남은 항목이 하나도 없는 분류는 분류째 뺀다.
  *
  * 화면에서 숨기는 것뿐이다 — 각 화면 PHP/fetch는 서버에서 따로 권한을 확인해야 한다.
  */
-function filterMenuByRibbon(menu, ribbonButtons, isMaster) {
-  if (isMaster === true) {
+function filterMenuByRibbon(menu, hasAuth) {
+  if (hasAuth('마스터')) {
     return menu;
   }
-  var allowed = Array.isArray(ribbonButtons) ? ribbonButtons : [];
   var categories = [];
   menu.categories.forEach(function (cat) {
     var items = cat.items.filter(function (item) {
-      return !item.ribbon || allowed.indexOf(item.ribbon) >= 0;
+      return !item.ribbon || hasAuth(item.ribbon);
     });
     if (items.length) {
       categories.push(Object.assign({}, cat, { items: items }));

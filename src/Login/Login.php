@@ -207,7 +207,7 @@ class Login
 
         // 사용여부는 1/'1'/true/'True'/-1(Access Yes/No) 등 여러 모양으로 오므로
         // 프로젝트 공통 변환 규칙 Str::toBool()로 판정한다(src/Str/Str.md 참고 —
-        // basicdata/로그인/config_로그인.php의 체크박스 판정도 같은 규칙).
+        // basicdata/login/login_entry.php의 체크박스 판정도 같은 규칙).
         if (!Str::toBool($crud->getValue(self::USAGE_FIELD))) {
             self::$lastError = '사용이 정지된 계정입니다.';
             return false;

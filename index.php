@@ -36,12 +36,115 @@ $amaniaLogoutUrl = LOGIN_BASE_URL . '/logout.php';
 
 <!-- variableBank(앱 전역 값 저장소) — action()의 default가 넘긴다. -->
 <script src="src/variableBank/variableBank.js?v=<?= filemtime(__DIR__ . '/src/variableBank/variableBank.js') ?>"></script>
+<script>
+/**
+ * variableBank 간편 함수 — setvalue/getvalue를 인자 개체 없이 바로 부른다.
+ * 탭 화면에서는 parent.setbank(...)/parent.getbank(...)로 부르거나,
+ * action('setbank'|'getbank', {pnickname, pvalue, pattname})으로도 부를 수
+ * 있다(셸 action()이 이 함수로 넘긴다).
+ *
+ * setbank(별명, 값, 속성) — 속성을 생략하면 'value'. 성공하면 true.
+ * getbank(별명, 속성)     — 속성을 생략하면 'value'. 없거나 실패하면 null.
+ * 실패 원인은 variableBank.js가 console.warn('[variableBank]', ...)에 남긴다.
+ */
+function setbank(pnickname, pvalue, pattname) {
+  return VariableBank.call('setvalue', { pnickname: pnickname, pvalue: pvalue, pattname: pattname || 'value' });
+}
+function getbank(pnickname, pattname) {
+  return VariableBank.call('getvalue', { pnickname: pnickname, pattname: pattname || 'value' });
+}
+
+/**
+ * getauth(권한명) — 로그인 사용자에게 그 권한이 있으면 true, 없으면 false.
+ * index가 열릴 때 저장해 둔 getbank('auth')(tAuth.authstring)로 판단한다.
+ * Auth::hasAuthority()와 같은 규칙 — 앞뒤에 ';'를 덧대 ";권한명;"으로
+ * 찾아야 "매출"이 "매출실적" 안에서 잘못 걸리지 않는다.
+ * 화면 표시용 판단일 뿐, 실제 권한 확인은 서버에서 한다.
+ */
+function getauth(pcode) {
+  var authstring = getbank('auth');
+  var code = pcode == null ? '' : String(pcode).trim();
+  if (authstring == null || authstring === '' || code === '') {
+    return false;
+  }
+  return (';' + authstring + ';').indexOf(';' + code + ';') !== -1;
+}
+</script>
 <!-- 좌측 메뉴 정의(MENU_JSON) — _initMenu()가 주입받는다. -->
 <script src="src/menu/menu.js?v=<?= filemtime(__DIR__ . '/src/menu/menu.js') ?>"></script>
-<!-- 로그인 사용자의 리본 버튼 목록/마스터 여부(세션의 tAuth.authstring에서) — 메뉴 표시용 복사본. -->
+<!-- 로그인 사용자의 authstring(세션의 tAuth.authstring) — 메뉴 표시/getauth용 복사본. -->
 <script>
-var AUTH_RIBBON_BUTTONS = <?= json_encode(Auth::getRibbonButtons(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
-var AUTH_IS_MASTER = <?= Auth::isMaster() ? 'true' : 'false' ?>;
+var AUTH_STRING = <?= json_encode((string) Auth::getValue('authstring'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+var AMANIA_USER_NAME = <?= json_encode($amaniaCurrentUserName, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+// index가 열릴 때 authstring을 저장소에 둔다 — 탭 화면은 parent.getbank('auth')/
+// parent.getauth(권한명)로 읽는다. 열 때마다 세션 값으로 덮어쓴다.
+// onLoad가 아니라 여기서 하는 이유: 좌측 메뉴 필터(_initMenu → getauth)가
+// onLoad보다 먼저 돌기 때문에, 그 전에 값이 들어 있어야 한다.
+setbank('auth', AUTH_STRING);
+</script>
+
+<script>
+/**
+ * 셸 이벤트 — 로그인 이후 메인 화면에서 일어나는 일에 끼워 넣을 코드는
+ * 전부 여기에만 적는다(amaniaShell() 본체는 손대지 않는다). amaniaShell()이
+ * 알맞은 시점에 _fireEvent()로 아래 함수를 불러 준다.
+ *
+ * 공통 규칙:
+ *  - 각 함수는 (params, shell)을 받는다. shell은 amaniaShell() 인스턴스라
+ *    shell.tabs / shell.activeTab / shell.action(...) 등을 그대로 쓸 수 있다.
+ *  - "취소 가능"이라 적힌 이벤트는 false를 돌려주면 그 동작이 일어나지 않는다
+ *    (undefined 등 다른 값은 그대로 진행).
+ *  - 여기서 예외가 나도 셸은 멈추지 않는다(_fireEvent()가 콘솔에만 남긴다).
+ *  - 필요 없는 이벤트는 함수를 지우지 말고 비워 둔다.
+ */
+var SHELL_EVENTS = {
+  /**
+   * 화면 로드 — 메뉴 주입(initMenu)이 끝난 직후 한 번.
+   * params: { userName, categories }
+   */
+  onLoad: function (params, shell) {
+    // 로그인하면 '일정' 화면을 바로 연다 — 권한(ribbon)이 없어 메뉴에서
+    // 빠진 사용자는 건너뛴다(그대로 부르면 데모 화면 탭이 열린다).
+    if (shell._findMenuItem('일정')) {
+      shell.selectLeftMenu('일정');
+    }
+  },
+
+  /**
+   * 화면 닫힘 — 브라우저 탭을 닫거나 새로고침/다른 주소로 이동할 때(pagehide).
+   * 로그아웃으로 떠날 때도 onLogout 다음에 불린다. 취소 불가 — 이 시점엔
+   * 화면을 붙잡을 수 없으니 저장 같은 비동기 작업은 navigator.sendBeacon으로.
+   * params: { tabs }
+   */
+  onClose: function (params, shell) {
+  },
+
+  /**
+   * 메뉴 선택 — 좌측 메뉴 항목을 눌렀을 때, 탭을 열기 전. 취소 가능.
+   * params: { title, src, category, group, isOpen }
+   *   src     열릴 페이지 경로(menu.js의 src, null이면 데모 화면)
+   *   isOpen  이미 열린 탭이면 true(새로 열지 않고 그 탭으로 이동만 함)
+   */
+  onSelectMenu: function (params, shell) {
+  },
+
+  /**
+   * 메뉴(탭) 닫기 — 탭의 X 버튼, "열린 탭 모두 닫기", 다른 group 메뉴를
+   * 열어 자동으로 닫힐 때 모두 탭마다 한 번씩. 취소 가능 — 단 group 때문에
+   * 자동으로 닫히는 경우(params.reason === 'group')는 취소 불가.
+   * params: { id, title, src, reason }
+   *   reason  'close'(X 버튼) | 'closeAll'(모두 닫기) | 'group'(다른 group 메뉴 열기)
+   */
+  onCloseMenu: function (params, shell) {
+  },
+
+  /**
+   * 로그아웃 — 로그아웃 버튼을 눌렀을 때, logout.php로 이동하기 전. 취소 가능.
+   * params: { userName, url }
+   */
+  onLogout: function (params, shell) {
+  },
+};
 </script>
 
 <script>
@@ -111,6 +214,38 @@ function amaniaShell() {
       this.initMenu();
       // 페이지를 열자마자도 3초 무호버 자동 축소 카운트가 시작되게 한다.
       this._scheduleTabMenuAutoHide();
+      // 셸 이벤트(SHELL_EVENTS) — 로드/닫힘.
+      this._fireEvent('onLoad', { userName: AMANIA_USER_NAME, categories: this.categories });
+      window.addEventListener('pagehide', () => {
+        this._fireEvent('onClose', { tabs: this.tabs.map(t => this._tabEventParams(t)) });
+      });
+    },
+
+    /**
+     * SHELL_EVENTS[name](params, this)를 부르고 그 반환값을 돌려준다 —
+     * 함수가 없으면 undefined. 이벤트 코드에서 예외가 나도 셸 동작은
+     * 이어지게 콘솔에만 남긴다.
+     */
+    _fireEvent(name, params) {
+      if (typeof SHELL_EVENTS === 'undefined' || typeof SHELL_EVENTS[name] !== 'function') {
+        return undefined;
+      }
+      try {
+        return SHELL_EVENTS[name](params, this);
+      } catch (e) {
+        console.error('SHELL_EVENTS.' + name + ' 오류', e);
+        return undefined;
+      }
+    },
+    _tabEventParams(tab) {
+      return { id: tab.id, title: tab.title, src: tab.src };
+    },
+    /** 로그아웃 링크 @click — onLogout이 false면 이동을 막는다. */
+    onLogoutClick(event) {
+      const url = event.currentTarget.getAttribute('href');
+      if (this._fireEvent('onLogout', { userName: AMANIA_USER_NAME, url }) === false) {
+        event.preventDefault();
+      }
     },
 
     // ── 공개 래퍼(action()을 거쳐서만 실제 로직을 실행) ──
@@ -175,12 +310,27 @@ function amaniaShell() {
         case 'toggleTabMenu':
         case 'toggleLeftMenu':
           return this.action_layout(pcmd, pparams, psender);
+        case 'setbank':
+        case 'getbank':
+          return this.action_bank(pcmd, pparams, psender);
         default:
           // 저장소(variableBank) 관련 pcmd는 전부 variableBank.js가 처리한다.
           if (VariableBank.handles(pcmd)) {
             return VariableBank.action(pcmd, pparams, psender);
           }
           console.warn('amania.action: 알 수 없는 pcmd - ' + pcmd);
+      }
+    },
+
+    // ── "저장소" 그룹 — variableBank 간편 함수(setbank/getbank) ──
+    // pparams: { pnickname, pvalue, pattname } — pattname 생략 시 'value'.
+    action_bank(pcmd, pparams, psender) {
+      pparams = pparams || {};
+      switch (pcmd) {
+        case 'setbank':
+          return setbank(pparams.pnickname, pparams.pvalue, pparams.pattname);
+        case 'getbank':
+          return getbank(pparams.pnickname, pparams.pattname);
       }
     },
 
@@ -201,8 +351,8 @@ function amaniaShell() {
      */
     _initMenu() {
       // 메뉴 정의는 src/menu/menu.js(MENU_JSON)에 있다 — 메뉴를 바꿀 땐 그 파일만 고친다.
-      // 로그인 사용자의 리본 버튼(AUTH_RIBBON_BUTTONS)에 없는 메뉴는 뺀다(마스터면 전부 보임).
-      const menuJson = filterMenuByRibbon(MENU_JSON, AUTH_RIBBON_BUTTONS, AUTH_IS_MASTER);
+      // 로그인 사용자에게 권한이 없는 메뉴는 뺀다 — getauth(ribbon)로 판단(마스터면 전부 보임).
+      const menuJson = filterMenuByRibbon(MENU_JSON, getauth);
       this.tabMenuAutoHideDelayMs = menuJson.tabMenuAutoHideDelayMs;
       this.categories = menuJson.categories;
       this.openCategory = this.categories.length ? this.categories[0].name : null;
@@ -221,6 +371,16 @@ function amaniaShell() {
       // 하드코딩하지 않고 메뉴 JSON의 autoHideMenu:true 값으로만 정한다
       // — 지금(src/menu/menu.js)은 true인 항목이 없다.
       const autoHideMenu = !!(item && item.autoHideMenu === true);
+      const selectParams = {
+        title,
+        src: item && item.src ? item.src : null,
+        category: categoryName,
+        group: categoryGroup,
+        isOpen: this.tabs.some(t => t.title === title),
+      };
+      if (this._fireEvent('onSelectMenu', selectParams) === false) {
+        return;
+      }
       this._closeTabsOutsideGroup(categoryGroup);
       this.syncCategory(title);
       const existing = this.tabs.find(t => t.title === title);
@@ -264,6 +424,9 @@ function amaniaShell() {
     _closeTabsOutsideGroup(group) {
       const keep = this.tabs.filter(t => t.group === group);
       if (keep.length === this.tabs.length) return;
+      this.tabs.filter(t => t.group !== group).forEach(t => {
+        this._fireEvent('onCloseMenu', Object.assign(this._tabEventParams(t), { reason: 'group' }));
+      });
       const activeStillOpen = keep.some(t => t.id === this.activeTab);
       this.tabs = keep;
       if (!activeStillOpen) {
@@ -351,6 +514,10 @@ function amaniaShell() {
     _closeTab(pparams) {
       const idx = this.tabs.findIndex(t => t.id === pparams.id);
       if (idx === -1) return;
+      const closeParams = Object.assign(this._tabEventParams(this.tabs[idx]), { reason: 'close' });
+      if (this._fireEvent('onCloseMenu', closeParams) === false) {
+        return;
+      }
       this.tabs.splice(idx, 1);
       if (this.activeTab === pparams.id) {
         if (this.tabs.length) {
@@ -367,9 +534,22 @@ function amaniaShell() {
       }
     },
     _closeAllTabs() {
-      this.tabs = [];
-      this.activeTab = null;
-      this._clearTabMenuAutoHide();
+      // onCloseMenu가 false를 돌려준 탭만 남긴다.
+      const keep = this.tabs.filter(t => {
+        const closeParams = Object.assign(this._tabEventParams(t), { reason: 'closeAll' });
+        return this._fireEvent('onCloseMenu', closeParams) === false;
+      });
+      this.tabs = keep;
+      if (!keep.some(t => t.id === this.activeTab)) {
+        if (keep.length) {
+          this.activeTab = keep[keep.length - 1].id;
+        } else {
+          this.activeTab = null;
+        }
+      }
+      if (keep.length === 0) {
+        this._clearTabMenuAutoHide();
+      }
     },
 
     // ── "레이아웃" 그룹 — 좌측 메뉴/탭 메뉴 표시 제어 ──
@@ -540,6 +720,7 @@ function amaniaShell() {
               </svg>
             </button>
             <a href="<?= htmlspecialchars($amaniaLogoutUrl, ENT_QUOTES, 'UTF-8') ?>"
+               @click="onLogoutClick($event)"
                class="shrink-0 w-6 h-6 flex items-center justify-center rounded-md cursor-pointer text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                title="로그아웃">
               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -696,7 +877,7 @@ function amaniaShell() {
                 :class="tabMenuOpen
                   ? 'bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border border-gray-200 dark:border-gray-700 shadow-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200'
                   : 'bg-gradient-to-b from-emerald-400 to-emerald-600 text-white shadow-[0_2px_4px_rgba(16,185,129,.35),0_8px_18px_-6px_rgba(16,185,129,.55),inset_0_1px_0_rgba(255,255,255,.35)] ring-1 ring-emerald-300/40 hover:from-emerald-300 hover:to-emerald-500'"
-                class="absolute top-2 left-2 z-30 w-9 h-9 flex items-center justify-center rounded-full cursor-pointer transition-colors">
+                class="absolute top-2 left-2 z-30 w-9 h-9 flex items-center justify-center rounded-full cursor-pointer opacity-30 hover:opacity-100 transition-[color,background-color,opacity]">
           <svg :class="tabMenuOpen ? 'rotate-180' : ''" class="w-4 h-4 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
           </svg>
