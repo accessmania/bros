@@ -912,7 +912,16 @@ class Calendar {
             const d = cells[i];
             const iso = Calendar._toIso(d.getFullYear(), d.getMonth() + 1, d.getDate());
             let cls = 'wc-cal-day';
-            if (d.getMonth() + 1 !== this.viewMonth) { cls += ' wc-cal-day-other-month'; }
+            // 이전/다음 달 칸은 회색 처리 대신 '9/27'처럼 월/일로 표시해 구분한다.
+            // 매달 1일도 달이 바뀌는 지점이라 이번 달이어도 항상 월/일로 표시한다.
+            const isOtherMonth = d.getMonth() + 1 !== this.viewMonth;
+            let dayLabel = String(d.getDate());
+            let numCls = 'wc-cal-day-num';
+            if (isOtherMonth) { cls += ' wc-cal-day-other-month'; }
+            if (isOtherMonth || d.getDate() === 1) {
+                dayLabel = (d.getMonth() + 1) + '/' + d.getDate();
+                numCls += ' wc-cal-day-num-md';
+            }
             if (Calendar._sameDate(d, today)) { cls += ' wc-cal-day-today'; }
 
             const selectionCls = this._selectionClassFor(iso);
@@ -930,7 +939,7 @@ class Calendar {
             }
 
             html += '<div class="' + cls + '" data-date="' + iso + '"' + codeAttr + '>' +
-                '<span class="wc-cal-day-num">' + d.getDate() + '</span>' +
+                '<span class="' + numCls + '">' + dayLabel + '</span>' +
                 memoHtml +
                 '</div>';
         }
@@ -1169,11 +1178,17 @@ class Calendar {
     .wc-cal-btn-primary { background: #1a73e8; border-color: #1a73e8; color: #fff; }
     .wc-cal-btn-primary:hover { background: #1765cc; }
     .wc-cal-day:hover { background: #f8f9fa; }
-    .wc-cal-day-other-month { color: #bdbdbd; background: #fafafa; }
     .wc-cal-day-num {
         font-size: 0.9rem; width: 24px; height: 24px; line-height: 24px;
         text-align: center; border-radius: 50%;
     }
+    /* 월/일 표시(이전/다음 달 칸, 매달 1일) — '9/27'처럼 글자가 길어 원 대신
+       가로로 늘어나는 알약 모양 */
+    .wc-cal-day-num-md {
+        width: auto; min-width: 24px; padding: 0 6px; box-sizing: border-box; border-radius: 12px;
+    }
+    /* 이전/다음 달 칸만 이탤릭 — 이번 달 1일은 똑바로 */
+    .wc-cal-day-other-month .wc-cal-day-num { font-style: italic; }
     .wc-cal-day-today .wc-cal-day-num { background: #e8eaed; font-weight: 700; }
     .wc-cal-day-selected .wc-cal-day-num,
     .wc-cal-day-range-endpoint .wc-cal-day-num {
