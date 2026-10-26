@@ -335,11 +335,13 @@ new AGGrid({
   newRowDefaults: {},                 // (2026-10-20 추가) "+ 행 추가"한 새 행에 미리 채울 값 {필드: 값}. 화면에 안 보이는 FK를 부모 키로 채울 때 사용(예: 고객사 팝업의 담당자 그리드 { parentcode: 고객사키 })
   showInfoStatus: false,              // 기본 숨김(2026-10-20 추가). true면 "편집을 취소했습니다."/"저장 완료" 등 안내 문구 표시(실패/오류 문구는 옵션과 무관하게 항상 표시)
   showAddRow: true,                   // 기본 표시("+ 행 추가", 편집모드에서만 노출). false면(2026-08-26 추가) 이 버튼 자체를 안 그림 — 신규 레코드를 만들 일이 없는 화면(예: 아가씨단가/밴드단가)에서 사용
+  showSearch: true,                   // 기본 표시(2026-10-26 추가). false면 툴바 검색창/"검색" 버튼을 안 그림 — 화면이 자기 검색 UI를 두고 grid.searchKeyword + setExtraQuery()로 검색할 때(예: workspace/inquiry/inquiry_entry.php)
   showDeleteColumn: true,             // 기본 표시(edit 모드에서 행별 "삭제" 컬럼). false면(2026-08-26 추가) 그 컬럼 자체를 안 그림 — 레코드를 지울 일이 없는 화면(예: 아가씨단가/밴드단가)에서 사용
   onRowDblClick: (values, key) => {}, // view 모드에서 행 더블클릭 시(이벤트 규칙 주입)
   onReady: (grid) => {},              // 툴바/그리드 DOM 구성이 끝난 뒤 1회 호출(2026-08-25 추가) — 아래 "onReady" 항목 참고
   onToolbarRendered: (grid) => {},    // 툴바가 (재)렌더될 때마다 매번 호출(2026-08-26 추가) — 아래 "onToolbarRendered" 항목 참고
   onFirstDataRendered: (grid) => {},  // 첫 데이터 블록이 실제로 그려진 뒤 1회 호출(2026-08-26 추가) — bestfit(autoSizeAllColumns)은 이제 기본 동작이라 이 콜백을 안 줘도 자동으로 실행됨(내부적으로 먼저 실행된 뒤 이 콜백이 이어서 호출됨); 컬럼 폭 계산 "이후"에 추가로 할 일이 있는 화면만 이 옵션을 쓰면 됨
+  onDataLoaded: (data, grid) => {},   // 목록 응답(JSON)을 받을 때마다 호출(2026-10-26 추가) — 서버가 rows 외에 실어 보낸 값(예: 실제로 쓴 WHERE)을 읽을 때. paged면 페이지 블록마다 불림(예: workspace/inquiry/inquiry_entry.php)
   conditionalFormats: [               // MS Access "조건부 서식" — 규칙은 항상 호출부가 주입
     { when: (values) => Number(values['나이']) > 60, style: { background: '#e6f4ea' } },
   ],

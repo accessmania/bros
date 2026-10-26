@@ -107,6 +107,10 @@ class AGGrid {
         // 동작 유지)지만, 레코드를 지울 일이 없는 화면(아가씨단가/밴드단가)
         // 은 이 옵션으로 편집모드의 "삭제" 컬럼 자체를 안 그리게 할 수 있다.
         this.showDeleteColumn = options.showDeleteColumn !== false;
+        // [2026-10-26 추가] 툴바 검색창/검색 버튼 — 기본은 표시. 화면이
+        // 자기 검색 UI(예: 필드 콤보 + 입력칸)를 따로 두는 경우 false로 끄고,
+        // searchKeyword/setExtraQuery()로 직접 검색한다(workspace/inquiry 참고).
+        this.showSearch = options.showSearch !== false;
         this.onRowDblClick = typeof options.onRowDblClick === 'function' ? options.onRowDblClick : null;
         this.conditionalFormats = Array.isArray(options.conditionalFormats) ? options.conditionalFormats : [];
         // 생성자는 AG Grid 라이브러리를 비동기로 로드한 뒤(_ensureLibraryLoaded의
@@ -125,6 +129,9 @@ class AGGrid {
         // 너무 이르다 — 첫 데이터 블록이 실제로 그려진 뒤에 불러야 하는
         // 콜백(예: gridApi.autoSizeAllColumns())을 위한 훅.
         this.onFirstDataRendered = typeof options.onFirstDataRendered === 'function' ? options.onFirstDataRendered : null;
+        // [2026-10-26 추가] 목록 응답(JSON)을 받을 때마다 (data, grid)로 부른다 —
+        // 서버가 rows 외에 실어 보낸 값(예: 실제로 쓴 WHERE)을 화면이 읽을 때 쓴다.
+        this.onDataLoaded = typeof options.onDataLoaded === 'function' ? options.onDataLoaded : null;
         // [2026-10-20 추가] "+ 행 추가"로 만든 새 행에 미리 채울 값({필드: 값}).
         // 화면에 안 보이는 FK(예: 고객사 담당자의 parentcode)를 부모 키로
         // 자동으로 채울 때 쓴다 — 숨긴 컬럼은 사용자가 입력할 수 없으므로.
@@ -314,11 +321,14 @@ class AGGrid {
         }
         // 검색창을 감싸 오른쪽 안쪽에 "×"(지우기) 버튼을 겹쳐 배치한다 —
         // 입력값과 검색 상태를 비우고 곧바로 재조회한다(_bindToolbarEvents).
-        html.push('<span class="ag-shell-search-wrap">');
-        html.push('<input type="text" class="ag-shell-search" placeholder="검색어" value="' + this._escape(this.searchKeyword) + '">');
-        html.push('<button type="button" class="ag-shell-search-clear-btn" title="검색어 지우기" aria-label="검색어 지우기">&times;</button>');
-        html.push('</span>');
-        html.push('<button type="button" class="ag-shell-search-btn">검색</button>');
+        // showSearch:false면 통째로 안 그린다.
+        if (this.showSearch) {
+            html.push('<span class="ag-shell-search-wrap">');
+            html.push('<input type="text" class="ag-shell-search" placeholder="검색어" value="' + this._escape(this.searchKeyword) + '">');
+            html.push('<button type="button" class="ag-shell-search-clear-btn" title="검색어 지우기" aria-label="검색어 지우기">&times;</button>');
+            html.push('</span>');
+            html.push('<button type="button" class="ag-shell-search-btn">검색</button>');
+        }
         // view 모드(저장 버튼이 없음)에서는 "이동" 도구의 결과 메시지 등을
         // 보여줄 자리가 필요하므로 여기(오른쪽 그룹)에 둔다.
         if (!isEdit) {
@@ -423,32 +433,35 @@ class AGGrid {
         }
 
         const searchInput = toolbarEl.querySelector('.ag-shell-search');
-        const runSearch = () => {
-            this.searchKeyword = searchInput.value;
-            this.requery();
-        };
-        toolbarEl.querySelector('.ag-shell-search-btn').addEventListener('click', runSearch);
-        searchInput.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' && !event.isComposing) {
-                runSearch();
-            }
-        });
-        // 포커스가 들어오면 이전 검색어를 지운다(입력창 표시만 — 아직
-        // Enter/버튼을 안 눌렀으므로 서버 재조회는 안 하고 searchKeyword
-        // 상태만 함께 비워, 빈 채로 바로 검색해도 전체 목록이 나오게 한다.
-        searchInput.addEventListener('focus', () => {
-            if (searchInput.value !== '') {
+        // showSearch:false면 검색창이 없다.
+        if (searchInput) {
+            const runSearch = () => {
+                this.searchKeyword = searchInput.value;
+                this.requery();
+            };
+            toolbarEl.querySelector('.ag-shell-search-btn').addEventListener('click', runSearch);
+            searchInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' && !event.isComposing) {
+                    runSearch();
+                }
+            });
+            // 포커스가 들어오면 이전 검색어를 지운다(입력창 표시만 — 아직
+            // Enter/버튼을 안 눌렀으므로 서버 재조회는 안 하고 searchKeyword
+            // 상태만 함께 비워, 빈 채로 바로 검색해도 전체 목록이 나오게 한다.
+            searchInput.addEventListener('focus', () => {
+                if (searchInput.value !== '') {
+                    searchInput.value = '';
+                    this.searchKeyword = '';
+                }
+            });
+            // "×" 버튼은 focus와 달리 명시적인 클릭 동작이라 서버 재조회까지
+            // 확실히 실행한다(runSearch 재사용 — 빈 키워드로 재조회하면
+            // 전체 목록으로 돌아간다).
+            toolbarEl.querySelector('.ag-shell-search-clear-btn').addEventListener('click', () => {
                 searchInput.value = '';
-                this.searchKeyword = '';
-            }
-        });
-        // "×" 버튼은 focus와 달리 명시적인 클릭 동작이라 서버 재조회까지
-        // 확실히 실행한다(runSearch 재사용 — 빈 키워드로 재조회하면
-        // 전체 목록으로 돌아간다).
-        toolbarEl.querySelector('.ag-shell-search-clear-btn').addEventListener('click', () => {
-            searchInput.value = '';
-            runSearch();
-        });
+                runSearch();
+            });
+        }
 
         if (this.mode === 'edit') {
             toolbarEl.querySelector('.ag-shell-cancel-btn').addEventListener('click', () => this.cancelEdits());
@@ -726,6 +739,9 @@ class AGGrid {
                     .then((res) => res.json())
                     .then((data) => {
                         params.successCallback(data.rows || [], typeof data.lastRow === 'number' ? data.lastRow : -1);
+                        if (this.onDataLoaded) {
+                            this.onDataLoaded(data, this);
+                        }
                     })
                     .catch(() => params.failCallback());
             },
@@ -738,6 +754,9 @@ class AGGrid {
             .then((res) => res.json())
             .then((data) => {
                 this.gridApi.setGridOption('rowData', data.rows || []);
+                if (this.onDataLoaded) {
+                    this.onDataLoaded(data, this);
+                }
             })
             .catch(() => {
                 this._setStatus('목록을 불러오지 못했습니다.');

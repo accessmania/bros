@@ -2,10 +2,11 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../Model/Crud/Crud.php';
-require_once __DIR__ . '/../db/DbContext.php';
-require_once __DIR__ . '/../Auth/Auth.php';
-require_once __DIR__ . '/../Str/Str.php';
+// login/class/로 옮겨 와서 src/ 밑 클래스는 SRC_DIR(config/Path.php) 기준으로 부른다.
+require_once SRC_DIR . 'Model/Crud/Crud.php';
+require_once SRC_DIR . 'db/DbContext.php';
+require_once SRC_DIR . 'Auth/Auth.php';
+require_once SRC_DIR . 'Str/Str.php';
 
 /**
  * tLogin 테이블 기반 로그인/세션 관리.

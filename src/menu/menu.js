@@ -28,7 +28,7 @@ var MENU_JSON = {
       name: '업무',
       group: '업무',
       items: [
-        { title: '문의', ribbon: 'button업무', src: null },
+        { title: '문의', ribbon: 'button업무', src: 'workspace/inquiry/inquiry_entry.php', themeParam: false },
         { title: '문의내용', ribbon: 'button업무', src: null },
         { title: '견적', ribbon: 'button업무', src: null },
         { title: '수주', ribbon: 'button업무', src: null },

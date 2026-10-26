@@ -123,6 +123,6 @@ JS 이식본이다(변환 불가 → 0). 여러 화면에서 JS 불린/날짜 �
 ## 관련 파일
 
 - `src/Str/Str.php` — 이 클래스
-- `src/Login/Login.php` — 사용여부 판정
+- `login/class/Login.php` — 사용여부 판정
 - `basicdata/login/login_entry.php` — 그리드 체크박스 판정
 - `src/js/DateTime/DateTime.js` — JS `DateTime.cdata()`(숫자 변환)

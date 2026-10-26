@@ -69,6 +69,34 @@ function getauth(pcode) {
   }
   return (';' + authstring + ';').indexOf(';' + code + ';') !== -1;
 }
+
+/**
+ * setContent(주소, 제목, 탭키) — content 영역에 그 주소의 페이지를 탭으로 연다.
+ * 메뉴(MENU_JSON)에 없는 페이지도 열 수 있다 — 메뉴 항목은 selectLeftMenu(제목).
+ * 제목을 생략하면 주소를 제목으로 쓴다. 같은 탭이 이미 있으면 새로 만들지 않고
+ * 그 탭으로 옮긴다(주소가 다르면 그 주소로, 제목이 다르면 그 제목으로 바꾼다).
+ * "같은 탭"은 탭키로 찾고, 탭키를 생략하면 제목으로 찾는다 — 탭 하나를 돌려쓰며
+ * 제목만 바꾸고 싶을 때 탭키를 준다(예: 키 '문의확인', 제목 '문의 (15077)').
+ * 탭 화면에서는 parent.setContent(...) 또는
+ * action('setContent', {psrc, ptitle, pkey})로 부른다. 성공하면 탭 id, 실패하면 null.
+ */
+/**
+ * menu.js에 없는 화면(setContent로 연 탭, tab.offMenu)의 탭 색 — cyan.
+ * Tailwind CLI로 미리 빌드한 CSS라 새 클래스(cyan-*)는 빌드 전엔 없으므로
+ * 인라인 style로 준다. 고른 탭은 슬라이딩 필(기본 에메랄드)을 cyan으로 덮고,
+ * 안 고른 탭은 옅은 cyan 바탕 + 진한 cyan 글자.
+ */
+var OFF_MENU_PILL_STYLE = 'background-image: linear-gradient(to bottom, #22d3ee, #0891b2);'
+  + ' box-shadow: 0 2px 4px rgba(8,145,178,.35), 0 10px 24px -6px rgba(8,145,178,.55), inset 0 1px 0 rgba(255,255,255,.35);';
+var OFF_MENU_TAB_STYLE = 'background-color: rgba(34,211,238,.18); color: #0e7490;';
+
+function setContent(psrc, ptitle, pkey) {
+  if (typeof window.action !== 'function') {
+    console.warn('setContent: 셸이 아직 준비되지 않았습니다.');
+    return null;
+  }
+  return window.action('setContent', { psrc: psrc, ptitle: ptitle, pkey: pkey }, window);
+}
 </script>
 <!-- 좌측 메뉴 정의(MENU_JSON) — _initMenu()가 주입받는다. -->
 <script src="src/menu/menu.js?v=<?= filemtime(__DIR__ . '/src/menu/menu.js') ?>"></script>
@@ -258,6 +286,9 @@ function amaniaShell() {
     selectTabMenu(id) {
       return this.action('selectTabMenu', { id }, this);
     },
+    setContent(psrc, ptitle, pkey) {
+      return this.action('setContent', { psrc, ptitle, pkey }, this);
+    },
     closeTab(id) {
       return this.action('closeTab', { id }, this);
     },
@@ -300,6 +331,7 @@ function amaniaShell() {
         case 'selectLeftMenu':
           return this.action_menu(pcmd, pparams, psender);
         case 'selectTabMenu':
+        case 'setContent':
         case 'closeTab':
         case 'closeAllTabs':
           return this.action_tab(pcmd, pparams, psender);
@@ -386,6 +418,8 @@ function amaniaShell() {
       const existing = this.tabs.find(t => t.title === title);
       if (existing) {
         this.activeTab = existing.id;
+        // 탭바 클릭(_selectTabMenu)과 같게 — 이미 열린 탭으로 옮기면 그 화면을 다시 조회한다.
+        this._requeryTabIframe(existing.id);
         // (1) 좌측 메뉴 선택 시 탭 메뉴는 항상 보이게 한다(숨겨져 있었다면
         // 복원) — 단 이 항목이 autoHideMenu:true인 경우에만. tabs.length가
         // 이미 확정된 뒤에 불러야 _scheduleTabMenuAutoHide()의 "탭 없으면
@@ -432,6 +466,7 @@ function amaniaShell() {
       if (!activeStillOpen) {
         if (keep.length) {
           this.activeTab = keep[keep.length - 1].id;
+          this._requeryTabIframe(this.activeTab); // 남은 탭으로 넘어가면 다시 조회
         } else {
           this.activeTab = null;
         }
@@ -476,6 +511,8 @@ function amaniaShell() {
       switch (pcmd) {
         case 'selectTabMenu':
           return this._selectTabMenu(pparams);
+        case 'setContent':
+          return this._setContent(pparams);
         case 'closeTab':
           return this._closeTab(pparams);
         case 'closeAllTabs':
@@ -493,8 +530,62 @@ function amaniaShell() {
       this._scheduleTabMenuAutoHide();
     },
     /**
-     * 탭이 옮겨질 때(selectTabMenu) 그 탭의 iframe 안 페이지에
-     * action('requery', {}, window)를 호출해준다 — deco_main.php 등이
+     * setContent — 주소(psrc)를 받아 탭을 열고 iframe에 그 페이지를 띄운다.
+     * _selectLeftMenu()와 달리 메뉴 JSON을 찾지 않는다. 메뉴 페이지와 같은
+     * 규칙으로 ?theme=를 붙인다(data: 주소는 빼고, 이미 ?가 있으면 &로).
+     * group은 지금 활성 탭의 것을 물려받는다 — 그래야 열려 있던 탭과
+     * 공존하고, 다른 group 메뉴를 열 때는 함께 닫힌다(_closeTabsOutsideGroup).
+     */
+    _setContent(pparams) {
+      pparams = pparams || {};
+      const rawSrc = pparams.psrc == null ? '' : String(pparams.psrc).trim();
+      if (rawSrc === '') {
+        console.warn('setContent: 주소(psrc)가 비어 있습니다.');
+        return null;
+      }
+      let title = pparams.ptitle == null ? '' : String(pparams.ptitle).trim();
+      if (title === '') {
+        title = rawSrc;
+      }
+      let src = rawSrc;
+      if (!rawSrc.startsWith('data:')) {
+        src = rawSrc + (rawSrc.includes('?') ? '&' : '?') + 'theme=' + this.theme;
+      }
+
+      // 탭키(pkey)가 있으면 그것으로, 없으면 제목으로 같은 탭을 찾는다. 키 없이
+      // 연 탭(메뉴 탭 포함)은 제목이 곧 키다.
+      const key = pparams.pkey == null || String(pparams.pkey).trim() === '' ? title : String(pparams.pkey).trim();
+      const existing = this.tabs.find(t => (t.key || t.title) === key);
+      if (existing) {
+        if (existing.title !== title) {
+          existing.title = title;
+        }
+        if (existing.src !== src) {
+          existing.src = src;
+        }
+        this._selectTabMenu({ id: existing.id });
+        return existing.id;
+      }
+
+      const active = this.tabs.find(t => t.id === this.activeTab);
+      let category = null;
+      let group = null;
+      if (active) {
+        category = active.category;
+        group = active.group;
+      }
+      const id = 't' + Date.now() + Math.random().toString(36).slice(2, 6);
+      // offMenu — menu.js에 없는 화면(setContent로 연 탭). 탭바가 cyan 색으로 구분해 그린다.
+      this.tabs.push({ id, key, title, src, category, group, autoHideMenu: false, offMenu: true });
+      this.activeTab = id;
+      this._scheduleTabMenuAutoHide();
+      return id;
+    },
+    /**
+     * 탭이 옮겨질 때 그 탭의 iframe 안 페이지에 action('requery', {}, window)를
+     * 호출해준다 — 탭바 클릭(selectTabMenu), 좌측 메뉴로 이미 열린 탭 고르기
+     * (_selectLeftMenu), 탭이 닫혀 옆 탭으로 넘어갈 때(_closeTab/_closeAllTabs/
+     * _closeTabsOutsideGroup) 모두. deco_main.php 등이
      * 이미 갖고 있는 'requery'(재조회) pcmd를 그대로 재사용하는 관례.
      * 같은 출처(same-origin) iframe이라 postMessage 없이 직접 함수
      * 호출이 가능하다(deco_main.php의 dmRelayToRightGrid()와 동일 원리).
@@ -522,6 +613,9 @@ function amaniaShell() {
       if (this.activeTab === pparams.id) {
         if (this.tabs.length) {
           this.activeTab = this.tabs[Math.max(0, idx - 1)].id;
+          // 닫혀서 옆 탭으로 넘어가면 그 화면을 다시 조회한다(예: 문의확인에서
+          // 삭제/창닫기 → 문의 목록이 지운 문의 없이 다시 보이게).
+          this._requeryTabIframe(this.activeTab);
         } else {
           this.activeTab = null;
         }
@@ -543,6 +637,7 @@ function amaniaShell() {
       if (!keep.some(t => t.id === this.activeTab)) {
         if (keep.length) {
           this.activeTab = keep[keep.length - 1].id;
+          this._requeryTabIframe(this.activeTab); // 남은 탭으로 넘어가면 다시 조회
         } else {
           this.activeTab = null;
         }
@@ -823,7 +918,7 @@ function amaniaShell() {
                       shadow-[0_2px_4px_rgba(16,185,129,.35),0_10px_24px_-6px_rgba(16,185,129,.55),inset_0_1px_0_rgba(255,255,255,.35)]
                       ring-1 ring-emerald-300/40
                       transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
-               :style="`left: ${pillLeft}px; width: ${pillWidth}px; opacity: ${pillWidth ? 1 : 0}`"></div>
+               :style="`left: ${pillLeft}px; width: ${pillWidth}px; opacity: ${pillWidth ? 1 : 0};` + (tabs.some(t => t.id === activeTab && t.offMenu) ? OFF_MENU_PILL_STYLE : '')"></div>
 
           <template x-for="tab in tabs" :key="tab.id">
             <div :data-tab-btn="tab.id"
@@ -840,6 +935,7 @@ function amaniaShell() {
                  x-transition:leave="transition ease-in duration-150"
                  x-transition:leave-start="opacity-100 scale-100"
                  x-transition:leave-end="opacity-0 scale-90"
+                 :style="tab.offMenu && activeTab !== tab.id ? OFF_MENU_TAB_STYLE : ''"
                  class="group relative z-10 flex items-center gap-2 pl-4 pr-2.5 py-1.5 text-sm rounded-full cursor-grab active:cursor-grabbing whitespace-nowrap transition-all duration-300">
               <span x-text="tab.title"></span>
               <button @click.stop="closeTab(tab.id)"

@@ -154,8 +154,16 @@ function include_custom(string ...$classNames): void
 /**
  * SRC_DIR 밑에서 "$className.php" 파일을 찾아 절대경로를 반환한다.
  * SRC_DIR 바로 밑을 먼저 보고(가장 흔한 경우라 빠름), 없으면 하위 폴더를
- * 재귀적으로 뒤진다. 못 찾으면 예외를 던진다(조용히 실패하지 않음).
+ * 재귀적으로 뒤진다. src/ 밖에 둔 클래스 폴더(CLASS_EXTRA_DIRS — 예: 로그인
+ * 관련 파일을 한곳에 모은 login/class/의 Login.php)도 그다음에 뒤진다.
+ * 못 찾으면 예외를 던진다(조용히 실패하지 않음).
+ *
+ * 파일명은 대소문자까지 정확히 비교한다(===) — Windows에선 is_file()이
+ * 대소문자를 무시하므로, login/login.php(화면)를 Login 클래스로 잘못
+ * 집지 않게 하려면 이름 비교로만 찾아야 한다.
  */
+const CLASS_EXTRA_DIRS = [APP_BASE_DIR . '/login/class'];
+
 function locate_class_file(string $className): string
 {
     $target = $className . '.php';
@@ -165,12 +173,17 @@ function locate_class_file(string $className): string
         return $direct;
     }
 
-    $iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator(rtrim(SRC_DIR, '/\\'), FilesystemIterator::SKIP_DOTS)
-    );
-    foreach ($iterator as $file) {
-        if ($file->getFilename() === $target) {
-            return $file->getPathname();
+    foreach (array_merge([rtrim(SRC_DIR, '/\\')], CLASS_EXTRA_DIRS) as $root) {
+        if (!is_dir($root)) {
+            continue;
+        }
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS)
+        );
+        foreach ($iterator as $file) {
+            if ($file->getFilename() === $target) {
+                return $file->getPathname();
+            }
         }
     }
 
