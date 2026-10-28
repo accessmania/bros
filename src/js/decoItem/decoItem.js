@@ -669,6 +669,8 @@ class DecoItem {
             // 실제로 보고 과부족 있으면 이 두 숫자만 조정.
             iframeWidth: options.iframeWidth || 840,
             iframeHeight: options.iframeHeight || 520,
+            // 주면 decoItem_entry.php가 부모 전역 action() 대신 이 콜백으로 보고한다(Popup.senderFor() 참고).
+            onAction: options.onAction,
             onClose: options.onClose,
         });
     }

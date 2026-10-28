@@ -252,6 +252,8 @@ class Memo {
             // 큰 텍스트영역 + 버튼행이 넉넉히 들어갈 어림값.
             iframeWidth: options.iframeWidth || 420,
             iframeHeight: options.iframeHeight || 360,
+            // 주면 Memo_entry.php가 부모 전역 action() 대신 이 콜백으로 보고한다(Popup.senderFor() 참고).
+            onAction: options.onAction,
             onClose: options.onClose,
         });
     }

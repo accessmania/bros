@@ -379,6 +379,8 @@ class TimePicker {
             // 과부족 있으면 이 두 숫자만 조정.
             iframeWidth: options.iframeWidth || 300,
             iframeHeight: options.iframeHeight || 480,
+            // 주면 TimePicker_entry.php가 부모 전역 action() 대신 이 콜백으로 보고한다(Popup.senderFor() 참고).
+            onAction: options.onAction,
             onClose: options.onClose,
         });
     }

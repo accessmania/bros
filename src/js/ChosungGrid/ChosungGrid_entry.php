@@ -114,8 +114,14 @@ $chosungGridJsVersion = filemtime(__DIR__ . '/ChosungGrid.js');
     // 판별 — window.parent가 있고 자기 자신이 아니고 action()이 있을
     // 때만 실제 sender로 쓴다(attendance_entry.php/deco_amd_amd.php와
     // 동일한 패턴).
+    // 나를 띄운 Popup에 onAction이 있으면 그 Popup이 sender(Popup.senderFor()
+    // 참고), 없으면 기존처럼 부모의 전역 action()이 sender.
     var sender = null;
-    if (window.parent && window.parent !== window && typeof window.parent.action === 'function') {
+    var popupSender = (window.parent && window.parent !== window && window.parent.Popup)
+        ? window.parent.Popup.senderFor(window) : null;
+    if (popupSender) {
+        sender = popupSender;
+    } else if (window.parent && window.parent !== window && typeof window.parent.action === 'function') {
         sender = window.parent;
     } else {
         // 직접 열었을 때만(=sender 없음) 로컬 로그 영역을 보여준다 —

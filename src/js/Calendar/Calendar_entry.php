@@ -122,9 +122,15 @@ $calendarJsVersion = filemtime(__DIR__ . '/Calendar.js');
     // sender 자체를 이 문서(window)로 잡아야 한다. Popup으로 열렸을
     // 때는 진짜 부모로 잡아 정상적으로 보고되게 한다(다른 entry들과
     // 동일한 방어적 판별).
+    // 나를 띄운 Popup에 onAction이 있으면 그 Popup이 sender(Popup.senderFor()
+    // 참고), 없으면 기존처럼 부모의 전역 action()이 sender.
     var sender = window;
+    var popupSender = (window.parent && window.parent !== window && window.parent.Popup)
+        ? window.parent.Popup.senderFor(window) : null;
     var hasRealParent = Boolean(window.parent && window.parent !== window && typeof window.parent.action === 'function');
-    if (hasRealParent) {
+    if (popupSender) {
+        sender = popupSender;
+    } else if (hasRealParent) {
         sender = window.parent;
     }
 

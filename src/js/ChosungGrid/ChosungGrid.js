@@ -454,6 +454,8 @@ class ChosungGrid {
             //       설명 참고, 그리드도 height:100%로 이 값을 그대로 물려받음).
             iframeWidth: options.iframeWidth || 548,
             iframeHeight: options.iframeHeight || 422,
+            // 주면 entry가 부모 전역 action() 대신 이 콜백으로 보고한다(Popup.senderFor() 참고).
+            onAction: options.onAction,
             onClose: options.onClose,
         });
     }
@@ -556,6 +558,8 @@ class ChosungGrid {
             // 기반이 아니라 CSS 값 기준 추정이라 사용자 확인 필요).
             iframeWidth: options.iframeWidth || 1056,
             iframeHeight: options.iframeHeight || 470,
+            // 주면 entry가 부모 전역 action() 대신 이 콜백으로 보고한다(Popup.senderFor() 참고).
+            onAction: options.onAction,
             onClose: options.onClose,
         });
     }

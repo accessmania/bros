@@ -1281,6 +1281,8 @@ class Calendar {
             // 불가 — NAS에서 여전히 스크롤이 보이면 이 숫자만 더 키우면
             // 됨).
             iframeHeight: options.iframeHeight || 440,
+            // 주면 Calendar_entry.php가 부모 전역 action() 대신 이 콜백으로 보고한다(Popup.senderFor() 참고).
+            onAction: options.onAction,
             onClose: options.onClose,
         });
     }

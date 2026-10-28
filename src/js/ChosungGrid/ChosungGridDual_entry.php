@@ -166,8 +166,14 @@ $chosungGridJsVersion = filemtime(__DIR__ . '/ChosungGrid.js');
     }
 
     // ChosungGrid_entry.php와 동일한 방어적 판별.
+    // 나를 띄운 Popup에 onAction이 있으면 그 Popup이 sender(Popup.senderFor()
+    // 참고), 없으면 기존처럼 부모의 전역 action()이 sender.
     var sender = null;
-    if (window.parent && window.parent !== window && typeof window.parent.action === 'function') {
+    var popupSender = (window.parent && window.parent !== window && window.parent.Popup)
+        ? window.parent.Popup.senderFor(window) : null;
+    if (popupSender) {
+        sender = popupSender;
+    } else if (window.parent && window.parent !== window && typeof window.parent.action === 'function') {
         sender = window.parent;
     } else {
         document.getElementById('cgd-log-wrap').hidden = false;

@@ -46,6 +46,18 @@ JS 컨텍스트를 공유하므로 `window.opener`/`postMessage` 같은 창간 �
   보여줄 때 쓴다. 크기는 `iframeWidth`/`iframeHeight`(기본 480×360,
   숫자면 px)로 지정. `html`/`iframeUrl` 둘 다 없으면 생성자가 예외를
   던진다.
+- **iframe 팝업도 `onAction`으로 받는다** — iframe 안 문서는
+  `Popup.instance(id)`를 직접 못 부르므로
+  `window.parent.Popup.senderFor(window)`로 자기를 띄운 Popup을 찾아
+  그 `action(ptype, payload)`을 부른다(Popup 인스턴스가 `action()`을
+  가지고 있어 위젯들의 `sender`로 그대로 쓸 수 있음). 그러면 `html`
+  팝업과 똑같이 `onAction(ptype, payload, id)`로 보고가 온다 —
+  `ptype`은 위젯의 callback 이름. `onAction`을 안 준 iframe 팝업은
+  `senderFor()`가 null을 돌려줘 기존처럼 `window.parent.action(...)`
+  (부모의 전역 action)으로 보고한다(하위 호환). Calendar/ChosungGrid
+  (open·openDual)/decoItem/Memo/NumberKeypad/TimePicker의 `open()`은
+  `onAction` 옵션을 그대로 Popup에 넘기고, 각 `_entry.php`는 이
+  판별을 먼저 한다.
 - **뜰 때 애니메이션 — `animation: 'none'|'small'|'large'`**(기본
   **`'none'`**) — 셋 다 방향은 오른쪽→왼쪽(제자리)으로 통일, 크기만
   다르다: `'small'`(우좌일부이동)은 살짝 이동(`translateX(32px) → 0`)
@@ -90,6 +102,11 @@ new Popup({
 - `close()` — DOM 제거 + `onClose(id)` 호출 + `Popup.instances`에서 제거
 - `Popup.instance(id)` — 정적 메서드, 등록된 인스턴스를 id로 조회
   (`AGGrid.instance(gridId)`/`Calendar.instance(id)`와 동일 패턴)
+- `Popup.senderFor(win)` — 정적 메서드, iframe 안 문서의 `window`로
+  그 iframe을 띄운 Popup을 찾는다(`onAction`이 있을 때만 인스턴스,
+  아니면 null)
+- `Popup.ofWindow(win)` — 정적 메서드, 위와 같지만 `onAction` 유무와
+  무관하게 인스턴스를 돌려준다(iframe 쪽에서 자기 팝업을 `close()`할 때)
 
 `open()`은 따로 없다 — `new Popup(...)` 생성자가 즉시 DOM을 만들어
 `document.body`에 붙이고 연다.

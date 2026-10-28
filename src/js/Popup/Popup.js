@@ -71,6 +71,14 @@
  * 차이. 크기는 `iframeWidth`/`iframeHeight`(기본 480×360, 숫자면 px)
  * 로 지정한다. `html`/`iframeUrl` 둘 다 없으면 생성자가 예외를 던진다.
  *
+ * iframe 안 문서는 같은 JS 컨텍스트가 아니라 `Popup.instance(id)`를
+ * 직접 못 부르므로, `window.parent.Popup.senderFor(window)`로 자기를
+ * 띄운 Popup을 찾아 그 `action()`을 부른다 — 그러면 `html` 팝업과
+ * 똑같이 생성자의 `onAction(ptype, payload, id)`로 보고가 온다.
+ * `onAction`을 안 준 iframe 팝업은 `senderFor()`가 null을 돌려줘서,
+ * iframe 쪽이 기존처럼 `window.parent.action(...)`(부모의 전역
+ * action)으로 보고한다(하위 호환).
+ *
  * ## 뜰 때 애니메이션 — `animation: 'none'|'small'|'large'`
  * 세 가지 중 하나를 고른다(기본값은 **`'none'`** — 여러 종류를 두게
  * 되면서 "켜고 싶은 화면만 명시적으로 켠다"는 쪽으로 정함). 2026-09-04
@@ -245,6 +253,9 @@ class Popup {
         box.innerHTML = '<div class="' + animWrapperCls + '">' + animHtml + '</div>';
 
         this.titleEl = box.querySelector('.wc-popup-title');
+        // iframeUrl 팝업이면 그 iframe을 기억해둔다 — iframe 안 문서가
+        // Popup.senderFor(window)로 "나를 띄운 Popup"을 찾을 때 쓴다.
+        this.iframeEl = box.querySelector('.wc-popup-iframe');
         box.querySelector('[data-popup-close]')?.addEventListener('click', () => this.close());
 
         this._applyPosition(box);
@@ -399,6 +410,39 @@ class Popup {
         return Popup.instances[id] || null;
     }
 
+    /**
+     * iframeUrl 팝업 안의 문서가 자기 `window`를 넘겨 "나를 띄운 Popup"을
+     * 찾는다 — 그 Popup에 `onAction`이 있을 때만 인스턴스를, 아니면 null을
+     * 돌려준다. 인스턴스 자신이 `action(ptype, payload)`를 가지고 있어서
+     * 위젯들의 `sender.action(callback, payload, window)` 호출에 그대로
+     * `sender`로 넘기면 된다(세 번째 인자 window는 무시되고, 대신 이
+     * 팝업의 id가 onAction의 세 번째 인자로 간다). null이면 호출부는
+     * 기존처럼 `window.parent`(전역 action())를 sender로 쓴다.
+     *
+     * 사용 예(iframe 안 문서):
+     *   var sender = window.parent.Popup ? window.parent.Popup.senderFor(window) : null;
+     */
+    static senderFor(win) {
+        const inst = Popup.ofWindow(win);
+        return inst && inst.onAction ? inst : null;
+    }
+
+    /**
+     * iframe 안 문서의 `window`로 그 iframe을 띄운 Popup 인스턴스를 찾는다
+     * (onAction 유무와 무관) — iframe 쪽에서 자기 팝업을 닫거나(`close()`)
+     * 캡션을 바꿀(`setCaption()`) 때 쓴다. 없으면 null.
+     */
+    static ofWindow(win) {
+        const ids = Object.keys(Popup.instances);
+        for (let i = 0; i < ids.length; i++) {
+            const inst = Popup.instances[ids[i]];
+            if (inst.iframeEl && inst.iframeEl.contentWindow === win) {
+                return inst;
+            }
+        }
+        return null;
+    }
+
     static _generateId() {
         return 'popup' + (++Popup._idSeq);
     }
@@ -505,3 +549,7 @@ class Popup {
 Popup.instances = {};
 Popup._idSeq = 0;
 Popup._zIndexSeq = 1000;
+
+// 최상위 `class` 선언은 전역 이름이 되지만 window의 속성은 안 된다 — iframe 안
+// 문서가 window.parent.Popup.senderFor()/ofWindow()로 찾을 수 있게 명시적으로 단다.
+window.Popup = Popup;

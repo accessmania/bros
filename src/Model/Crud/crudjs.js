@@ -413,9 +413,22 @@ class CrudJs {
         if (meta && this._isNumericType(meta.type)) {
             displayValue = this._formatNumberForDisplay(displayValue);
         }
+        // [2026-10-28 추가] 날짜/시각 필드는 'YYYY-MM-DD'(시각 있으면 ' HH:MM')로 보인다.
+        if (meta && this._dateKind(meta.type) !== null) {
+            displayValue = this._formatDateValue(field, displayValue);
+            // <input type="date">는 날짜만, type="datetime-local"은 'YYYY-MM-DDTHH:MM'만 받는다.
+            if (el.tagName === 'INPUT' && el.type === 'date') {
+                displayValue = String(displayValue).substring(0, 10);
+            } else if (el.tagName === 'INPUT' && el.type === 'datetime-local' && displayValue !== '') {
+                displayValue = String(displayValue).length === 10
+                    ? displayValue + 'T00:00'
+                    : String(displayValue).replace(' ', 'T');
+            }
+        }
 
         if (el.tagName === 'INPUT' && el.type === 'checkbox') {
-            el.checked = Boolean(value);
+            // [2026-10-28 수정] Boolean(value)는 서버의 '0'(글자)도 참으로 봐서 늘 체크됐다.
+            el.checked = this._toCheckboxState(value);
         } else if ('value' in el) {
             el.value = displayValue;
         } else {
@@ -430,7 +443,14 @@ class CrudJs {
      * @returns {*}
      */
     _readValueFromEl(el, field) {
+        var meta = field ? (this.schema.fields || {})[field] : null;
+
         if (el.tagName === 'INPUT' && el.type === 'checkbox') {
+            // [2026-10-28 수정] 숫자형(bit 등) 필드면 1/0으로 — true/false로 보내면
+            // 서버 bit 변환이 DB마다 다르고, 서버에서 온 '1'/'0'과 비교도 안 맞는다.
+            if (meta && this._isNumericType(meta.type)) {
+                return el.checked ? 1 : 0;
+            }
             return el.checked;
         }
         var raw;
@@ -440,9 +460,12 @@ class CrudJs {
             raw = el.textContent;
         }
 
-        var meta = field ? (this.schema.fields || {})[field] : null;
         if (meta && this._isNumericType(meta.type)) {
             return this._unformatNumber(raw);
+        }
+        // [2026-10-28 추가] 날짜/시각은 표준 글자로 — datetime-local의 'T'도 공백으로 바뀐다.
+        if (meta && this._dateKind(meta.type) !== null) {
+            return this._formatDateValue(field, raw);
         }
         return raw;
     }
@@ -631,12 +654,299 @@ class CrudJs {
                 errors.push(field + ': ' + meta.maxLength + '자를 넘었습니다.');
             }
 
-            if (self._isNumericType(meta.type) && isNaN(Number(value))) {
-                errors.push(field + ': 숫자여야 합니다.');
+            // [2026-10-28 수정] 숫자 판정을 `isNaN(Number(value))`에서 타입별
+            // 형식 검사로 바꿨다 — Number()는 '1e3'/'0x1A'/'Infinity'/' '도
+            // 숫자로 받아줘 DB에서야 오류가 났다. 정수형은 정수만, bit는
+            // 0/1(체크박스의 true/false 포함)만 받는다(_isValidNumberValue()).
+            var numericKind = self._numericKind(meta.type);
+            if (numericKind !== null && !self._isValidNumberValue(numericKind, value)) {
+                var numericMessage = {
+                    bit: '0 또는 1이어야 합니다.',
+                    integer: '정수여야 합니다.',
+                };
+                errors.push(field + ': ' + (numericMessage[numericKind] || '숫자여야 합니다.'));
+            }
+
+            // [2026-10-28 추가] 날짜/시각 형식 검사 — 전에는 아예 없어
+            // '2026-13-45'/'abc'도 서버까지 갔다(_isValidDateValue()).
+            var dateKind = self._dateKind(meta.type);
+            if (dateKind !== null && !self._isValidDateValue(dateKind, value)) {
+                errors.push(field + ': ' + (dateKind === 'time' ? '시각 형식(HH:MM)이 아닙니다.' : '날짜 형식(YYYY-MM-DD)이 아니거나 없는 날짜입니다.'));
             }
         });
 
         return errors;
+    }
+
+    /**
+     * [2026-10-28 신설] 숫자형 타입을 검사 종류로 나눈다 — 'bit'(0/1),
+     * 'integer'(int 계열), 'float'(float/real — 지수표기 허용), 'decimal'
+     * (decimal/numeric/money). 숫자형이 아니면 null. 판정 범위는
+     * _isNumericType()과 같다(그 함수가 true인 타입은 여기서도 null이 아니다).
+     * @param {string|null|undefined} type
+     * @returns {('bit'|'integer'|'float'|'decimal'|null)}
+     */
+    _numericKind(type) {
+        if (!this._isNumericType(type)) {
+            return null;
+        }
+        var lower = String(type).toLowerCase();
+        if (lower.indexOf('bit') !== -1) {
+            return 'bit';
+        }
+        if (lower.indexOf('int') !== -1) {
+            return 'integer';
+        }
+        if (lower.indexOf('float') !== -1 || lower.indexOf('real') !== -1) {
+            return 'float';
+        }
+        return 'decimal';
+    }
+
+    /**
+     * [2026-10-28 신설] 숫자 값이 그 종류의 형식에 맞는지. 콤마는 이미
+     * _readValueFromEl()이 지운 뒤라 여기선 보지 않는다. 앞뒤 공백은 허용.
+     * @param {string} kind _numericKind()의 결과
+     * @param {*} value 비어 있지 않은 값
+     * @returns {boolean}
+     */
+    _isValidNumberValue(kind, value) {
+        var text = String(value).trim();
+        switch (kind) {
+            case 'bit':
+                return /^(0|1|true|false)$/i.test(text);
+            case 'integer':
+                return /^[-+]?\d+$/.test(text);
+            case 'float':
+                return /^[-+]?(\d+(\.\d*)?|\.\d+)([eE][-+]?\d+)?$/.test(text);
+            default:
+                return /^[-+]?(\d+(\.\d*)?|\.\d+)$/.test(text);
+        }
+    }
+
+    /**
+     * [2026-10-28 신설] 날짜/시각 타입이면 검사 종류를, 아니면 null.
+     * 'time'(time) / 'date'(date, datetime, smalldatetime, datetime2,
+     * datetimeoffset, MySQL timestamp). MSSQL의 timestamp(rowversion)는
+     * Crud가 스키마에서 이미 뺀다(EXCLUDED_FIELDS).
+     * @param {string|null|undefined} type
+     * @returns {('date'|'time'|null)}
+     */
+    _dateKind(type) {
+        if (!type) {
+            return null;
+        }
+        var lower = String(type).toLowerCase();
+        if (lower === 'time' || lower.indexOf('time(') === 0) {
+            return 'time';
+        }
+        if (lower.indexOf('date') !== -1 || lower === 'timestamp') {
+            return 'date';
+        }
+        return null;
+    }
+
+    /**
+     * [2026-10-28 신설] 날짜/시각 값이 형식에 맞고 실제로 있는 날짜인지.
+     * 받는 형식:
+     * - 'YYYY-MM-DD'(구분자 - / . 허용) + 선택적으로 ' HH:MM[:SS[.fff]]'
+     *   (T 구분, 끝의 Z/+09:00도 허용) — 화면에서 입력하는 형식.
+     * - 'Sep 30 2026 12:00:00:000AM' — Crud가 MSSQL(pdo_dblib)에서 읽은 값을
+     *   그대로 내려보내는 형식. 이걸 막으면 날짜 필드가 있는 기존 레코드를
+     *   손대지 않고 다시 저장해도 걸린다.
+     * time 타입은 'HH:MM[:SS[.fff]]'(dblib의 끝 AM/PM 포함)만 받는다.
+     * @param {string} kind _dateKind()의 결과
+     * @param {*} value 비어 있지 않은 값
+     * @returns {boolean}
+     */
+    _isValidDateValue(kind, value) {
+        return this._parseDateValue(kind, value) !== null;
+    }
+
+    /**
+     * [2026-10-28 신설] 서버에서 받은 행들을 화면이 쓰는 표준 값으로 바꾼다(제자리에서).
+     * _loadRecordSet()이 서버 응답을 받자마자 부른다.
+     * - 날짜/시각 필드 → _formatDateValue()의 표준 글자('YYYY-MM-DD' 등)
+     * - bit 필드의 true/false → 1/0(체크박스가 읽어 오는 값과 같게)
+     * @param {object[]} rows
+     */
+    _normalizeLoadedRows(rows) {
+        var fields = this.schema.fields || {};
+        var names = Object.keys(fields);
+        var row;
+        var name;
+        var i;
+        var j;
+
+        for (i = 0; i < rows.length; i++) {
+            row = rows[i];
+            for (j = 0; j < names.length; j++) {
+                name = names[j];
+                if (!Object.prototype.hasOwnProperty.call(row, name)) {
+                    continue;
+                }
+                if (this._dateKind(fields[name].type) !== null) {
+                    row[name] = this._formatDateValue(name, row[name]);
+                } else if (this._numericKind(fields[name].type) === 'bit') {
+                    if (row[name] === true) {
+                        row[name] = 1;
+                    } else if (row[name] === false) {
+                        row[name] = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * [2026-10-28 신설, _isValidDateValue()에서 분리] 날짜/시각 글자를 나눠 읽는다 —
+     * 검사(_isValidDateValue)와 표시 서식(_formatDateValue)이 같이 쓴다.
+     * 받는 형식은 _isValidDateValue() 설명과 같다. 형식이 틀리거나 없는 날짜면 null.
+     * @param {string} kind _dateKind()의 결과('date'|'time')
+     * @param {*} value
+     * @returns {{year: number, month: number, day: number, hour: number, minute: number,
+     *   second: number, hasTime: boolean}|null} time 종류면 year/month/day는 0.
+     */
+    _parseDateValue(kind, value) {
+        var text = String(value).trim();
+        var months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+        // 시각 부분 — ampm이 있으면 12시간제(1~12), 없으면 24시간제(0~23). 틀리면 null.
+        var readTime = function (hour, minute, second, ampm) {
+            var h = Number(hour);
+            var mi = Number(minute);
+            var s = second === undefined ? 0 : Number(second);
+            if (ampm) {
+                if (h < 1 || h > 12) {
+                    return null;
+                }
+                h = h % 12;
+                if (ampm.toLowerCase() === 'pm') {
+                    h = h + 12;
+                }
+            } else if (h > 23) {
+                return null;
+            }
+            if (mi > 59 || s > 59) {
+                return null;
+            }
+            return { hour: h, minute: mi, second: s };
+        };
+        // 날짜 부분 — 실제로 있는 날짜인지(2월 30일 등은 null).
+        var isRealDate = function (y, mo, d) {
+            var date = new Date(Date.UTC(y, mo - 1, d));
+            return mo >= 1 && mo <= 12 && date.getUTCFullYear() === y && date.getUTCMonth() === mo - 1 && date.getUTCDate() === d;
+        };
+        var m;
+        var t;
+        var y;
+        var mo;
+        var d;
+
+        if (kind === 'time') {
+            m = /^(\d{1,2}):(\d{2})(?::(\d{2})(?:[.:]\d{1,7})?)?\s*([AaPp][Mm])?$/.exec(text);
+            if (!m) {
+                return null;
+            }
+            t = readTime(m[1], m[2], m[3], m[4]);
+            if (t === null) {
+                return null;
+            }
+            return { year: 0, month: 0, day: 0, hour: t.hour, minute: t.minute, second: t.second, hasTime: true };
+        }
+
+        // 'YYYY-MM-DD[ HH:MM[:SS[.fff]]]'
+        m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d{1,7})?)?)?(?:\s*(?:Z|[+-]\d{2}:?\d{2}))?$/.exec(text);
+        if (m) {
+            y = Number(m[1]);
+            mo = Number(m[2]);
+            d = Number(m[3]);
+            t = m[4] === undefined ? { hour: 0, minute: 0, second: 0 } : readTime(m[4], m[5], m[6], null);
+        } else {
+            // 'Sep 30 2026 12:00:00:000AM'(dblib)
+            m = /^([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2})(?:[.:]\d{1,7})?)?\s*([AaPp][Mm]))?$/.exec(text);
+            if (!m) {
+                return null;
+            }
+            y = Number(m[3]);
+            mo = months.indexOf(m[1].toLowerCase()) + 1;
+            d = Number(m[2]);
+            t = m[4] === undefined ? { hour: 0, minute: 0, second: 0 } : readTime(m[4], m[5], m[6], m[7]);
+        }
+
+        if (t === null || !isRealDate(y, mo, d)) {
+            return null;
+        }
+        return { year: y, month: mo, day: d, hour: t.hour, minute: t.minute, second: t.second, hasTime: m[4] !== undefined };
+    }
+
+    /**
+     * [2026-10-28 신설] 날짜/시각 필드 값을 화면용 표준 글자로 바꾼다 — 서버가 dblib
+     * 형식('Sep 30 2026 12:00:00:000AM')으로 보내도 화면에는 'YYYY-MM-DD'로 보인다.
+     * - date 타입, 또는 시각이 00:00:00인 datetime → 'YYYY-MM-DD'
+     * - 시각이 있는 datetime → 'YYYY-MM-DD HH:MM'(초가 0이 아니면 ':SS'까지)
+     * - time 타입 → 'HH:MM'(초가 0이 아니면 ':SS'까지)
+     * 이 글자는 MSSQL/MySQL이 그대로 받는 형식이라 저장에도 그대로 쓴다.
+     * 날짜 필드가 아니거나, 비었거나, 읽을 수 없는 값이면 손대지 않고 돌려준다(그런
+     * 값은 validateSchema()가 저장 때 걸러낸다).
+     * @param {string} field
+     * @param {*} value
+     * @returns {*}
+     */
+    _formatDateValue(field, value) {
+        var meta = (this.schema.fields || {})[field];
+        var kind;
+        var p;
+        var two = function (n) {
+            return n < 10 ? '0' + n : String(n);
+        };
+        var timeText;
+
+        if (!meta || value === null || value === undefined || value === '') {
+            return value;
+        }
+        kind = this._dateKind(meta.type);
+        if (kind === null) {
+            return value;
+        }
+        p = this._parseDateValue(kind, value);
+        if (p === null) {
+            return value;
+        }
+
+        timeText = two(p.hour) + ':' + two(p.minute);
+        if (p.second !== 0) {
+            timeText = timeText + ':' + two(p.second);
+        }
+
+        if (kind === 'time') {
+            return timeText;
+        }
+
+        var dateText = p.year + '-' + two(p.month) + '-' + two(p.day);
+        if (String(meta.type).toLowerCase() === 'date' || (p.hour === 0 && p.minute === 0 && p.second === 0)) {
+            return dateText;
+        }
+        return dateText + ' ' + timeText;
+    }
+
+    /**
+     * [2026-10-28 신설] 체크박스에 쓸 참/거짓 — 서버 bit 값은 '0'/'1' 글자로 오기도 해서
+     * Boolean('0')(=true)로 보면 안 된다. 1/'1'/true/'true'/-1(Access의 참)/'y'는 참,
+     * 그 밖(0/'0'/''/null/'false'/'n' …)은 거짓.
+     * @param {*} value
+     * @returns {boolean}
+     */
+    _toCheckboxState(value) {
+        var text;
+
+        if (value === true) {
+            return true;
+        }
+        if (value === false || value === null || value === undefined) {
+            return false;
+        }
+        text = String(value).trim().toLowerCase();
+        return text === '1' || text === '-1' || text === 'true' || text === 'y' || text === 'yes';
     }
 
     /**
@@ -1011,6 +1321,10 @@ class CrudJs {
      */
     _loadRecordSet(rows, cursor) {
         this._recordSet = rows || [];
+        // [2026-10-28 추가] 서버의 날짜(dblib 'Sep 30 2026 12:00:00:000AM' 등)와 bit(true/false)를
+        // 받자마자 화면과 같은 표준 값('YYYY-MM-DD', 1/0)으로 바꿔 둔다 — 안 그러면 화면에서
+        // 읽어 온 값과 글자가 달라, 손대지 않은 행도 커서를 옮기면 "바뀜"(dirty)으로 잡힌다.
+        this._normalizeLoadedRows(this._recordSet);
         this._dirtyKeys = {};
         this._deletedKeys = {};
         if (typeof cursor === 'number' && cursor >= 0 && cursor < this._recordSet.length) {

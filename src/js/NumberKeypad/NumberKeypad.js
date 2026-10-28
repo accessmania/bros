@@ -569,6 +569,8 @@ class NumberKeypad {
             // 줄(각 40px+gap6 ≈ 92px)이 늘어난 만큼 높이를 420→520으로 키움.
             iframeWidth: options.iframeWidth || 260,
             iframeHeight: options.iframeHeight || 520,
+            // 주면 NumberKeypad_entry.php가 부모 전역 action() 대신 이 콜백으로 보고한다(Popup.senderFor() 참고).
+            onAction: options.onAction,
             onClose: options.onClose,
         });
     }
