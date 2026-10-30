@@ -5,7 +5,7 @@ declare(strict_types=1);
  * [fLogin_amd.php — crudbuttons 시범 폼(tLogin 한 건)]
  * tLogin 필드와 같은 id의 컨트롤을 배치하고, 아래 iframe에 crudbuttons.php를 넣는다.
  * CRUD 실행과 버튼은 crudbuttons가 하고, 이 페이지는 필드와 이벤트만 정의한다
- * (checkCrudSave(id 중복 — async)/beforeCrudSave/afterCrudSave/…/isEnableAmdSave/
+ * (beforeCrudSave(필수 입력 + id 중복 — async)/afterCrudSave/…/isEnableAmdSave/
  * isEnableAmdDelete — 아래 스크립트). 저장 안 한 값 경고는 crudbuttons가 알아서 한다.
  *
  * 주소: fLogin_amd.php?code=<tLogin.code> — 기존 레코드. code 생략 또는 new — 신규.
@@ -125,7 +125,7 @@ body {
 <script>
 // 로그인한 사람 — 본인 계정은 지우지 못하게 한다(isEnableAmdDelete).
 var FL_LOGIN_CODE = <?= json_encode((string) Login::getValue('code')) ?>;
-// 서버 주소 — id 중복 확인(checkCrudSave)에 쓴다.
+// 서버 주소 — id 중복 확인(beforeCrudSave)에 쓴다.
 var FL_FETCH_URL = <?= json_encode($fetchUrl, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
 
 // 띄운 쪽에 알리기(psender.report)와 제목 바꾸기(psender.setCaption)는 crudbuttons가
@@ -144,7 +144,7 @@ function flCaption(psender) {
     }
 }
 
-/** 버튼 iframe의 창 — 'requery'/'selectRecord'를 그쪽 action에 맡길 때 쓴다. 없으면 null. */
+/** 버튼 iframe의 창 — 명령을 그쪽 action에 맡길 때(action_buttons) 쓴다. 없으면 null. */
 function flButtons() {
     var frame = document.getElementById('cb-frame');
 
@@ -183,24 +183,37 @@ function isEnableAmdDelete(psender, rerror) {
 }
 
 /**
- * 저장 전 서버 확인(async) — 같은 id를 다른 사람이 이미 쓰면 막는다.
- * crudbuttons가 결과를 기다린다(await). id가 비었으면 여기선 통과시키고
- * 아래 beforeCrudSave가 "id를 입력하세요"로 막는다.
+ * 저장 전 검사 — 위에서 아래로 차례대로 본다. 하나라도 걸리면 false(저장 안 함).
+ *  ① id 필수  ② 이름 필수  ③ id 중복(서버에 물어본다 — await)
+ * 가벼운 검사를 먼저 두어 빈 값일 때는 서버에 묻지 않는다.
+ * async라도 crudbuttons(CrudJs)가 끝날 때까지 기다린다.
  */
-async function checkCrudSave(psender, ppara) {
-    var id = flText(psender.getCrud().getValue('id'));
+async function beforeCrudSave(psender, ppara) {
+    var crud = psender.getCrud();
+    var id = flText(crud.getValue('id'));
     var pk = psender.getPk();
     var url;
     var res;
     var data;
 
+    // ① id 필수
     if (id === '') {
-        return true;
+        ppara.error = 'id를 입력하세요.';
+        document.getElementById('id').focus();
+        return false;
     }
 
+    // ② 이름 필수
+    if (flText(crud.getValue('이름')) === '') {
+        ppara.error = '이름을 입력하세요.';
+        document.getElementById('이름').focus();
+        return false;
+    }
+
+    // ③ id 중복 — 고치는 중인 자기 자신은 빼고 센다.
     url = FL_FETCH_URL + '?action=checkId&id=' + encodeURIComponent(id);
     if (pk !== null) {
-        url = url + '&code=' + encodeURIComponent(pk);   // 고치는 중인 자기 자신은 빼고 센다.
+        url = url + '&code=' + encodeURIComponent(pk);
     }
 
     res = await fetch(url);
@@ -213,24 +226,6 @@ async function checkCrudSave(psender, ppara) {
     if (data.exists) {
         ppara.error = '이미 쓰고 있는 id입니다: ' + id;
         document.getElementById('id').focus();
-        return false;
-    }
-    return true;
-}
-
-/** id와 이름은 꼭 있어야 저장한다. */
-function beforeCrudSave(psender, ppara) {
-    var crud = psender.getCrud();
-
-    if (flText(crud.getValue('id')) === '') {
-        ppara.error = 'id를 입력하세요.';
-        document.getElementById('id').focus();
-        return false;
-    }
-
-    if (flText(crud.getValue('이름')) === '') {
-        ppara.error = '이름을 입력하세요.';
-        document.getElementById('이름').focus();
         return false;
     }
 
@@ -280,38 +275,38 @@ function afterCrudSelectRecord(psender, ppara) {
     flCaption(psender);
 }
 
-/** action(pcmd, pparams, psender) — 버튼 iframe과 바깥(entry)이 이 화면을 부르는 창구. */
+/**
+ * action(pcmd, pparams, psender) — 버튼 iframe과 바깥(entry)이 이 화면을 부르는 창구.
+ * 여기서는 명령을 종류별로 나눠 넘기기만 한다.
+ *   action_buttons — 레코드/창 명령: close / requery / selectRecord(버튼 iframe에 맡긴다)
+ */
 function action(pcmd, pparams, psender) {
-    var buttons;
-
     if (!pparams) {
         pparams = {};
     }
-    buttons = flButtons();
 
     switch (pcmd) {
         case 'close':
-            // 바깥에서 닫으라고 할 때 — 창닫기 버튼과 같은 길(crudbuttons)로 닫는다.
-            if (buttons !== null) {
-                buttons.action('close');
-            }
-            return;
-
         case 'requery':
-            if (buttons !== null) {
-                buttons.action('requery');
-            }
-            return;
-
         case 'selectRecord':
-            if (buttons !== null) {
-                buttons.action('selectRecord', { pk: pparams.pk });
-            }
-            return;
+            return action_buttons(pcmd, pparams, psender);
 
         default:
             console.warn('fLogin_amd.action: 알 수 없는 pcmd - ' + pcmd);
     }
+}
+
+/**
+ * 레코드/창 명령 — 버튼 iframe(crudbuttons)의 action에 그대로 맡긴다.
+ * 바깥에서 닫으라고 해도 창닫기 버튼과 같은 길로 닫힌다.
+ */
+function action_buttons(pcmd, pparams, psender) {
+    var buttons = flButtons();
+
+    if (buttons === null) {
+        return;
+    }
+    return buttons.action(pcmd, pparams, window);
 }
 </script>
 </body>

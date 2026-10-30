@@ -14,6 +14,7 @@ declare(strict_types=1);
  *   <iframe class="cb-frame" src="<?= APP_BASE_URL ?>/src/Model/Crud/crudbuttons/crudbuttons.php?fetch=...&pk=..."></iframe>
  *
  * 페이지 함수: action(pcmd, pparams, psender) — 버튼도 전부 이리로 흐른다.
+ * action은 종류별 하위 함수(action_record / action_window)로 나눠 넘긴다.
  *  - 'save' / 'delete' / 'clear'(신규입력) / 'close'(창닫기 — 팝업이면 팝업을, 단독이면 창을 닫는다)
  *  - 'selectRecord' {pk} — 그 레코드를 연다.
  *  - 'requery' — 지금 레코드를 다시 읽는다.
@@ -39,7 +40,7 @@ if ($fetchUrl === '' || strpos($fetchUrl, APP_BASE_URL . '/') !== 0) {
     $fetchError = 'fetch 주소가 없거나 이 앱의 주소가 아닙니다.';
 }
 
-$crudJsPath = APP_BASE_DIR . '/src/Model/Crud/crudjs.js';
+$crudJsPath = APP_BASE_DIR . '/src/Model/Crud/crudjs/crudjs.js';
 $buttonsJsPath = __DIR__ . '/crudbuttons.js';
 ?>
 <!doctype html>
@@ -70,7 +71,7 @@ body { font-family: 'Malgun Gothic', 'Segoe UI', system-ui, sans-serif; font-siz
 <div class="cb-bar"><span class="cb-message cb-error"><?= htmlspecialchars($fetchError, ENT_QUOTES, 'UTF-8') ?></span></div>
 <?php else: ?>
 <div id="cb-root"></div>
-<script src="<?= APP_BASE_URL ?>/src/Model/Crud/crudjs.js?v=<?= filemtime($crudJsPath) ?>"></script>
+<script src="<?= APP_BASE_URL ?>/src/Model/Crud/crudjs/crudjs.js?v=<?= filemtime($crudJsPath) ?>"></script>
 <script src="crudbuttons.js?v=<?= filemtime($buttonsJsPath) ?>"></script>
 <script>
 var crudButtons = new CrudButtons({
@@ -79,7 +80,12 @@ var crudButtons = new CrudButtons({
     pk: <?= json_encode($pk, JSON_UNESCAPED_UNICODE) ?>
 });
 
-/** action(pcmd, pparams, psender) — 버튼과 부모 폼이 이 페이지를 부르는 창구. */
+/**
+ * action(pcmd, pparams, psender) — 버튼과 부모 폼이 이 페이지를 부르는 창구.
+ * 여기서는 명령을 종류별로 나눠 넘기기만 한다(case를 겹쳐 쓰면 VBA의 Case "a", "b"와 같다).
+ *   action_record — 레코드 작업: save / delete / clear / selectRecord / requery
+ *   action_window — 창/화면: close / refresh
+ */
 function action(pcmd, pparams, psender) {
     if (!pparams) {
         pparams = {};
@@ -87,21 +93,44 @@ function action(pcmd, pparams, psender) {
 
     switch (pcmd) {
         case 'save':
+        case 'delete':
+        case 'clear':
+        case 'selectRecord':
+        case 'requery':
+            return action_record(pcmd, pparams, psender);
+
+        case 'close':
+        case 'refresh':
+            return action_window(pcmd, pparams, psender);
+
+        default:
+            console.warn('crudbuttons.action: 알 수 없는 pcmd - ' + pcmd);
+    }
+}
+
+/** 레코드 작업 — 저장/삭제/신규입력/레코드 열기/다시 읽기. */
+function action_record(pcmd, pparams, psender) {
+    switch (pcmd) {
+        case 'save':
             return crudButtons.save();
         case 'delete':
             return crudButtons.remove();
         case 'clear':
             return crudButtons.newRecord();
-        case 'close':
-            return crudButtons.close();
         case 'selectRecord':
             return crudButtons.selectRecord(pparams.pk);
         case 'requery':
             return crudButtons.requery();
+    }
+}
+
+/** 창/화면 — 창닫기, 버튼 활성/비활성 다시 정하기. */
+function action_window(pcmd, pparams, psender) {
+    switch (pcmd) {
+        case 'close':
+            return crudButtons.close();
         case 'refresh':
             return crudButtons.refresh();
-        default:
-            console.warn('crudbuttons.action: 알 수 없는 pcmd - ' + pcmd);
     }
 }
 

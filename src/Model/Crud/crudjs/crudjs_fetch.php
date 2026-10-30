@@ -74,7 +74,7 @@ for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir
 require_once $__bootDir . '/config/Path.php';
 unset($__bootDir);
 
-require_once __DIR__ . '/Crud.php';
+require_once dirname(__DIR__) . '/Crud.php';
 require_once APP_BASE_DIR . '/src/db/DbContext.php';
 // selectRecords()의 TOP N 조건을 안전하게 인용할 때 쓴다(deco_amd_fetch.php
 // 의 updateMaechulField()와 동일한 이유로 명시적으로 require).

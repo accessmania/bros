@@ -21,7 +21,6 @@
  *
  * ## 부모 폼에 정의하는 이벤트(전부 선택)
  *   isEnableAmdSave(psender, rerror)        isEnableAmdDelete(psender, rerror)
- *   checkCrudSave(psender, ppara)           checkCrudDelete(psender, ppara)     ← async 가능
  *   beforeCrudSave(psender, ppara)          afterCrudSave(psender, ppara)
  *   beforeCrudDelete(psender, ppara)        afterCrudDelete(psender, ppara)
  *   beforeCrudClear(psender, ppara)         afterCrudClear(psender, ppara)
@@ -31,17 +30,21 @@
  *   psender.getPk()로 지금 PK, psender.isDirty()로 저장 안 한 값이 있는지 안다.
  * - amd를 띄운 쪽에 알리기/제목 바꾸기도 psender로 한다(amd는 자기가 팝업에 있는지
  *   iframe에 있는지 몰라도 된다):
- *     psender.report('saved', { code: … })  — 팝업이면 onAction, iframe이면 부모 action('amdReport')
+ *     psender.report('saved', { code: … })  — 띄운 쪽의 action('amdReport')(팝업이든 iframe이든)
  *     psender.setCaption('…')               — 팝업 캡션 또는 문서 제목
- * - isEnable…/check…/before…가 false를 돌려주면 그 작업을 막는다. 이유를 보여주려면
+ * - 창과 창 사이의 명령·보고는 전부 그 창의 action(pcmd, pparams, psender)으로 한다.
+ *   위 이벤트들만 이름 있는 함수로 부른다(Access의 이벤트 프로시저처럼).
+ * - isEnable…/before…가 false를 돌려주면 그 작업을 막는다. 이유를 보여주려면
  *   rerror.error / ppara.error에 글을 넣는다(Access의 ByRef rerror 대신 객체).
  *
  * ## 저장 순서
- *   스키마 검사(CrudJs) → checkCrudSave(서버에 물어보는 검사, await) →
- *   isEnableAmdSave → beforeCrudSave → 서버 저장 → afterCrudSave
- * - check…만 async로 쓸 수 있다(서버 확인 등). isEnable…/before…/after…는 바로 답해야
- *   한다(CrudJs가 기다리지 않는다).
- * - 삭제도 같다: 확인창 → checkCrudDelete(await) → isEnableAmdDelete → beforeCrudDelete → …
+ *   스키마 검사(CrudJs) → isEnableAmdSave → beforeCrudSave(await) → 서버 저장 → afterCrudSave
+ * - 저장 전 검사는 beforeCrudSave 한 곳에 위에서 아래로 쓴다. 서버에 물어봐야 하면
+ *   async function으로 쓰면 된다(CrudJs가 기다린다). 가벼운 검사(필수 입력)를 먼저,
+ *   서버 확인(id 중복)을 나중에 두면 쓸데없는 서버 왕복이 없다.
+ * - beforeCrudSave/Delete/Clear/SelectRecord는 async 가능. isEnable…(버튼 상태 때마다
+ *   불림)과 beforeCrudClose는 바로 답해야 한다(기다리지 않는다).
+ * - 삭제도 같다: 확인창 → isEnableAmdDelete → beforeCrudDelete(await) → 서버 삭제 → …
  *
  * ## 저장 안 한 값
  * - 레코드를 열거나 / 비우거나 / 저장한 직후의 값을 "기준값"으로 기억해 두고, 지금 값이
@@ -157,28 +160,13 @@ class CrudButtons {
         return pk;
     }
 
-    /** 저장 — 스키마 검사 → checkCrudSave(await) → (CrudJs 안에서) isEnable/before → 서버. */
+    /** 저장 — (CrudJs 안에서) 스키마 검사 → isEnableAmdSave → beforeCrudSave(await) → 서버 → afterCrudSave. */
     async save() {
         var self = this;
         var ok;
 
-        ok = await this.runWork('저장', '저장했습니다.', async function () {
-            var errors;
-
-            // ① 스키마 검사 — 서버에 묻기 전에 형식부터 거른다.
-            errors = self.crud.validateSchema();
-            if (errors.length > 0) {
-                self.crud._lastError = errors.join(' / ');
-                return false;
-            }
-
-            // ② 서버에 물어보는 검사(id 중복 등).
-            if (await self.askParentAsync('checkCrudSave') === false) {
-                return false;
-            }
-
-            // ③ isEnableAmdSave → beforeCrudSave → 서버 저장 → afterCrudSave
-            return await self.crud.save();
+        ok = await this.runWork('저장', '저장했습니다.', function () {
+            return self.crud.save();
         });
 
         if (ok) {
@@ -187,7 +175,7 @@ class CrudButtons {
         return ok;
     }
 
-    /** 삭제 — 확인창 → checkCrudDelete(await) → (CrudJs 안에서) isEnable/before → 서버 → 폼 비우기. */
+    /** 삭제 — 확인창 → (CrudJs 안에서) isEnableAmdDelete → beforeCrudDelete(await) → 서버 → 폼 비우기. */
     async remove() {
         var self = this;
         var pk = this.getPk();
@@ -200,11 +188,8 @@ class CrudButtons {
             return false;
         }
 
-        ok = await this.runWork('삭제', '삭제했습니다.', async function () {
-            if (await self.askParentAsync('checkCrudDelete') === false) {
-                return false;
-            }
-            return await self.crud.deleteRecord();
+        ok = await this.runWork('삭제', '삭제했습니다.', function () {
+            return self.crud.deleteRecord();
         });
 
         // 지운 레코드가 화면에 남지 않게 폼을 비운다(지웠으니 물을 것 없다).
@@ -334,27 +319,37 @@ class CrudButtons {
 
     /**
      * amd를 띄운 쪽에 보고한다 — ptype: 'saved' / 'deleted' / 'closed' 등.
-     * - 팝업 안이면: 팝업의 action → 띄운 쪽의 onAction(ptype, ppayload, 팝업id)
-     * - iframe 안이면: 띄운 쪽의 action('amdReport', {ptype, payload}, amd창)
-     * - 단독이면: 보고할 곳이 없다.
+     * 팝업으로 띄웠든 iframe으로 넣었든 항상 띄운 쪽의
+     *   action('amdReport', { ptype, payload, popupId }, amd창)
+     * 하나로 간다. popupId는 팝업 안이면 그 팝업 id, 아니면 ''.
+     * 단독이면 보고할 곳이 없다.
      */
     report(ptype, ppayload) {
         var amd = this.target;
         var host = amd.parent;
-        var popup = this.findPopup();
+        var popup;
+        var popupId;
 
         if (!ppayload) {
             ppayload = {};
         }
 
-        if (popup !== null) {
-            popup.action(ptype, ppayload);
+        // 단독(주소창/새 탭)이거나 띄운 쪽에 action이 없으면 보고할 곳이 없다.
+        if (host === amd) {
+            return;
+        }
+        if (typeof host.action !== 'function') {
             return;
         }
 
-        if (host !== amd && typeof host.action === 'function') {
-            host.action('amdReport', { ptype: ptype, payload: ppayload }, amd);
+        popup = this.findPopup();
+        if (popup !== null) {
+            popupId = popup.id;
+        } else {
+            popupId = '';
         }
+
+        host.action('amdReport', { ptype: ptype, payload: ppayload, popupId: popupId }, amd);
     }
 
     /** 제목을 바꾼다 — 팝업이면 팝업 캡션, 아니면 amd 문서 제목(브라우저 탭 글자). */
@@ -548,45 +543,10 @@ class CrudButtons {
     }
 
     /**
-     * 부모 폼의 check… 이벤트(async 가능)를 부르고 결과를 기다린다.
-     * false면 부모가 ppara.error에 넣은 이유를 CrudJs 오류 문구로 남기고 false.
-     * 그런 함수가 없으면 true(통과). 부모 함수에서 오류가 나면 false(막음).
-     */
-    async askParentAsync(pname) {
-        var fn = this.target[pname];
-        var ppara = { error: '' };
-        var result;
-
-        if (typeof fn !== 'function') {
-            return true;
-        }
-
-        try {
-            result = await fn.call(this.target, this, ppara);
-        } catch (err) {
-            console.error(err);
-            result = false;
-            if (!ppara.error) {
-                ppara.error = pname + ' 오류: ' + err.message;
-            }
-        }
-
-        if (result === false) {
-            if (ppara.error) {
-                this.crud._lastError = ppara.error;
-            } else {
-                this.crud._lastError = '취소되었습니다(' + pname + ').';
-            }
-            return false;
-        }
-        return true;
-    }
-
-    /**
      * CrudJs에 이벤트를 단다 — CrudJs는 저장/삭제/신규/조회 앞뒤에
      * crud.save_before 같은 자리를 부르는데, 그 자리마다 "부모 폼의 이벤트를
      * 부르는 함수"를 넣어 둔다.
-     *   ..._before → askParent(허용여부 함수, before 함수) — false면 작업 취소
+     *   ..._before → askParent(허용여부 함수, before 함수) — false면 작업 취소(CrudJs가 await)
      *   ..._after  → callParent(after 함수)
      */
     wireCrudEvents() {
@@ -611,14 +571,18 @@ class CrudButtons {
     }
 
     /**
-     * 작업 전에 부모에게 묻는다 — ① 허용여부 함수(isEnable…, null이면 건너뜀)
-     * ② before 함수. 둘 중 하나라도 false면 false를 돌려줘 작업을 취소한다.
+     * 작업 전에 부모에게 묻는다 — ① 허용여부 함수(isEnable…, null이면 건너뜀, 동기)
+     * ② before 함수(async 가능 — 결과를 기다린다).
+     * 둘 중 하나라도 false면 false를 돌려줘 작업을 취소한다.
      * 이때 부모가 ppara.error에 넣은 이유를 CrudJs 오류 문구로 남긴다
      * (버튼 옆에 "저장 실패: <이유>"로 보인다).
      */
-    askParent(pisEnableName, pbeforeName) {
+    async askParent(pisEnableName, pbeforeName) {
         var ppara = { error: '' };
+        var fn;
+        var result;
 
+        // ① 허용여부 — 버튼 상태(refresh)에서도 부르니 동기로만 쓴다.
         if (pisEnableName !== null) {
             if (this.callParent(pisEnableName, ppara) === false) {
                 if (ppara.error) {
@@ -630,7 +594,23 @@ class CrudButtons {
             }
         }
 
-        if (this.callParent(pbeforeName, ppara) === false) {
+        // ② before — 없으면 통과. async면 끝날 때까지 기다린다.
+        fn = this.target[pbeforeName];
+        if (typeof fn !== 'function') {
+            return true;
+        }
+
+        try {
+            result = await fn.call(this.target, this, ppara);
+        } catch (err) {
+            console.error(err);
+            result = false;
+            if (!ppara.error) {
+                ppara.error = pbeforeName + ' 오류: ' + err.message;
+            }
+        }
+
+        if (result === false) {
             if (ppara.error) {
                 this.crud._lastError = ppara.error;
             } else {

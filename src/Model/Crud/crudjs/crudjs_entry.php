@@ -46,7 +46,7 @@ for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir
 require_once $__bootDir . '/config/Path.php';
 unset($__bootDir);
 
-require_once __DIR__ . '/Crud.php';
+require_once dirname(__DIR__) . '/Crud.php';
 require_once APP_BASE_DIR . '/src/db/DbContext.php';
 
 function crudjs_entry_h(string $value): string
@@ -69,9 +69,9 @@ try {
     $loadError = $e->getMessage();
 }
 
-$crudjsJsPath = APP_BASE_DIR . '/src/Model/Crud/crudjs.js';
-$crudjsJsUrl = APP_BASE_URL . '/src/Model/Crud/crudjs.js?v=' . (is_file($crudjsJsPath) ? filemtime($crudjsJsPath) : time());
-$fetchUrl = APP_BASE_URL . '/src/Model/Crud/crudjs_fetch.php';
+$crudjsJsPath = APP_BASE_DIR . '/src/Model/Crud/crudjs/crudjs.js';
+$crudjsJsUrl = APP_BASE_URL . '/src/Model/Crud/crudjs/crudjs.js?v=' . (is_file($crudjsJsPath) ? filemtime($crudjsJsPath) : time());
+$fetchUrl = APP_BASE_URL . '/src/Model/Crud/crudjs/crudjs_fetch.php';
 ?>
 <!doctype html>
 <html lang="ko">
@@ -304,9 +304,11 @@ $fetchUrl = APP_BASE_URL . '/src/Model/Crud/crudjs_fetch.php';
         });
 
         document.getElementById('crudjs-btn-clear').addEventListener('click', function () {
-            if (!crudjs.clear()) {
-                setStatus('초기화 취소: ' + crudjs.getError());
-            }
+            crudjs.clear().then(function (ok) {
+                if (!ok) {
+                    setStatus('초기화 취소: ' + crudjs.getError());
+                }
+            });
         });
 
         // getJson() — 지금 crudjs 인스턴스가 내부에 들고 있는 값을

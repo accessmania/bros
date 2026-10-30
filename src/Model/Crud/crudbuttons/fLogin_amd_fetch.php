@@ -14,7 +14,7 @@ declare(strict_types=1);
  *  - save (POST, JSON 행)   — PK 있으면 update, 없으면 insert → {success, pk}.
  *  - delete&pk= (POST)      — 삭제 → {success, affected}.
  *  - checkId&id=[&code=]    — 그 id를 다른 레코드(code가 아닌 것)가 이미 쓰는지 → {success, exists}
- *                             (fLogin_amd.php의 checkCrudSave — 저장 전 비동기 검사).
+ *                             (fLogin_amd.php의 beforeCrudSave — 저장 전 비동기 검사).
  *
  * 다루는 필드는 TLOGIN_FIELD_WHITELIST(+PK 자동)뿐이다 — 순수 텍스트 '권한'은
  * 권한code 콤보가 대신하므로 뺐다(basicdata/login과 같은 이유).

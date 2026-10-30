@@ -8,6 +8,29 @@ crudbuttons는 그 이벤트를 **불러줄 뿐**이다 — Access에서 폼 모
 
 이 폴더의 JS는 전부 **VBA식 JS**로 쓴다(규칙은 `crudbuttons.js` 맨 위 주석).
 
+## 먼저 읽을 것 — AI·개발자가 이 폴더를 쓰거나 고칠 때 지킬 규칙
+
+1. **VBA식 JS** — `var`만(함수 맨 위에 모아 선언), `function`만(화살표 함수 안 씀), 매개변수는 `p`로 시작,
+   조건은 `if / else`(삼항·`&&` 줄임 안 씀), 반복은 `for (var i = 0; …)`, 문자열은 `+`로 잇기,
+   서버를 기다리는 일은 `async / await`. (`crudjs.js`만 예외 — 원래 스타일을 따른다.)
+2. **창과 창 사이: 명령·보고는 `action`, 이벤트는 이름 있는 함수.**
+   - 명령(시키기)·보고(알리기) → 상대 창의 `action(pcmd, pparams, psender)`.
+   - 이벤트(묻기·알림: `beforeCrudSave` 등) → crudbuttons가 입력폼의 함수를 이름으로 찾아 부른다
+     (Access의 이벤트 프로시저와 같다). 없으면 통과.
+3. **`action`은 나눠 넘기기만 한다.** case를 겹쳐(VBA `Case "a", "b"`) 종류별 하위 함수
+   `action_xxx(pcmd, pparams, psender)`로 넘기고, 실제 일은 하위 함수에서 한다. (4절 예시)
+4. **입력폼 → 띄운 쪽 보고는 `psender.report(ptype, payload)` 하나.** 띄운 쪽은 팝업이든 iframe이든
+   `action('amdReport', {ptype, payload, popupId}, amd창)`로 받는다. Popup의 `onAction`은 쓰지 않는다.
+5. **저장 전 검사는 `beforeCrudSave` 한 곳**에 위에서 아래로 쓴다. 서버 확인이 필요하면
+   `async function`으로(CrudJs가 기다린다). 가벼운 검사(필수 입력)를 먼저, 서버 확인을 나중에.
+   `isEnable…`과 `beforeCrudClose`는 기다리지 않으니 바로 답한다.
+6. **화면 전용 함수·변수에는 화면 접두사**를 붙인다 — fLogin_amd.php는 `fl`/`FL_`
+   (`flButtons`, `FL_FETCH_URL`), crudbuttons_entry.php는 `ce`/`CE_`, crudbuttons의 CSS는 `cb-`.
+   전역 이름 충돌(특히 이름으로 찾아 부르는 이벤트·`action`, `window.close` 같은 내장)을 막고,
+   "이 화면의 도우미"임을 이름만으로 알게 한다. 이벤트 함수와 `action`/`action_xxx`에는 붙이지 않는다.
+7. **컨트롤 id = 테이블 필드명.** 값 읽고 쓰기는 `psender.getCrud().getValue/setValue`로
+   (DOM을 직접 만지지 않는다). CrudJs 자체 설명은 `../crudjs/Crudjs.md`.
+
 ## 접근 주소
 
 ```
@@ -27,7 +50,7 @@ http://192.168.0.40/bros/src/Model/Crud/crudbuttons/fLogin_amd_fetch.php?action=
 | `crudbuttons_entry.php` | 시험 화면 — tLogin 목록, 버튼 11개, 입력폼을 Popup으로 띄우고 콜백을 로그로 보여준다. |
 
 관련 파일(이 폴더 밖):
-- `src/Model/Crud/crudjs.js` — CrudJs(클라이언트 CRUD 엔진). `Crudjs.md` 참고.
+- `src/Model/Crud/crudjs/crudjs.js` — CrudJs(클라이언트 CRUD 엔진). `crudjs/Crudjs.md` 참고.
 - `src/js/Popup/Popup.js` — Popup(레이어 팝업). `popup.md` 참고.
 
 ---
@@ -36,7 +59,7 @@ http://192.168.0.40/bros/src/Model/Crud/crudbuttons/fLogin_amd_fetch.php?action=
 
 ```
 entry (crudbuttons_entry.php)                       ← 목록/버튼, 입력폼을 띄우는 쪽
- │  new Popup({ iframeUrl: 'fLogin_amd.php?code=…', onAction, onClose })
+ │  new Popup({ iframeUrl: 'fLogin_amd.php?code=…', onClose })   ← 보고는 entry의 action('amdReport')로
  │
  └─ Popup (레이어 팝업, entry 문서 안의 <div>)
      └─ <iframe> amd (fLogin_amd.php)               ← 입력폼: 필드 컨트롤 + 이벤트 함수
@@ -55,7 +78,7 @@ entry (crudbuttons_entry.php)                       ← 목록/버튼, 입력폼
 | | 아는 것 | 모르는 것 |
 |---|---|---|
 | **entry** | 어떤 입력폼을 어떤 code로 띄울지, 콜백을 받으면 뭘 할지(목록 requery 등) | 입력폼 안의 필드, CRUD 방법 |
-| **Popup** | 박스를 띄우고 닫기, 캡션, 안 내용의 보고를 `onAction`으로 넘기기 | 안에 무엇이 들었는지 |
+| **Popup** | 박스를 띄우고 닫기, 캡션 | 안에 무엇이 들었는지(입력폼의 보고는 Popup을 거치지 않는다) |
 | **amd(입력폼)** | 필드 배치, 업무 규칙(이벤트), 언제 무엇을 보고할지 | 버튼, 서버 통신, 자기가 팝업/iframe/단독 중 어디에 있는지 |
 | **crudbuttons** | 버튼, 언제 어떤 이벤트를 부를지, 버튼 활성/비활성, amd를 감싼 쪽(팝업/iframe/단독)에 보고·닫기 | 어떤 테이블인지(fetch 주소로만 앎), 업무 규칙 |
 | **CrudJs** | 스키마, 화면↔값 동기화, 기본 스키마 검사, 서버 호출 | 버튼, 부모 폼의 이벤트 이름 |
@@ -133,23 +156,22 @@ $buttonsSrc = APP_BASE_URL . '/src/Model/Crud/crudbuttons/crudbuttons.php?fetch=
 |---|---|---|
 | `isEnableAmdSave(psender, rerror)` | ① 버튼 상태를 정할 때마다 ② 저장 누른 순간(before 앞) | `false`면 저장 버튼 비활성 / 저장 취소 |
 | `isEnableAmdDelete(psender, rerror)` | 위와 같음(삭제) | `false`면 삭제 버튼 비활성 / 삭제 취소 |
-| `checkCrudSave(psender, ppara)` **async 가능** | 저장 누른 순간 — 스키마 검사 통과 후, isEnable 앞. 서버에 물어보는 검사(id 중복 등) | `false`면 취소(서버로 안 감) |
-| `checkCrudDelete(psender, ppara)` **async 가능** | 삭제 확인창 "예" 뒤, isEnable 앞(딸린 자료 확인 등) | `false`면 취소 |
-| `beforeCrudSave(psender, ppara)` | 저장 직전(스키마 검사 통과 후) | `false`면 취소 |
+| `beforeCrudSave(psender, ppara)` **async 가능** | 저장 직전(스키마 검사·isEnable 통과 후). 저장 전 검사는 전부 여기 — 필수 입력, 서버 확인(id 중복 등) | `false`면 취소(서버로 안 감) |
 | `afterCrudSave(psender, ppara)` | 저장 성공 뒤(새 PK가 폼에 들어간 뒤) | 없음 |
-| `beforeCrudDelete(psender, ppara)` | 삭제 직전(확인창 "예" 뒤) | `false`면 취소 |
+| `beforeCrudDelete(psender, ppara)` **async 가능** | 삭제 직전(확인창 "예" 뒤) — 딸린 자료 확인 등 | `false`면 취소 |
 | `afterCrudDelete(psender, ppara)` | 삭제 성공 뒤(폼을 비우기 전 — PK가 아직 있다) | 없음 |
-| `beforeCrudClear(psender, ppara)` | 신규입력(폼 비우기) 직전 — 삭제 뒤에도 돈다 | `false`면 취소 |
+| `beforeCrudClear(psender, ppara)` **async 가능** | 신규입력(폼 비우기) 직전 — 삭제 뒤에도 돈다 | `false`면 취소 |
 | `afterCrudClear(psender, ppara)` | 폼을 비운 뒤 — 기본값 넣기 좋은 자리 | 없음 |
-| `beforeCrudSelectRecord(psender, ppara)` | 레코드를 읽기 직전 | `false`면 취소 |
+| `beforeCrudSelectRecord(psender, ppara)` **async 가능** | 레코드를 읽기 직전 | `false`면 취소 |
 | `afterCrudSelectRecord(psender, ppara)` | 레코드를 폼에 채운 뒤 | 없음 |
 | `beforeCrudClose(psender, ppara)` | 창닫기 직전 — 저장 안 한 값 확인 등 | `false`면 안 닫음 |
 
 - **막을 이유 보여주기**: `rerror.error = '…'` / `ppara.error = '…'`에 글을 넣고 `false`를
   돌려주면 버튼 옆에 "저장 실패: …"로 보인다(Access의 ByRef `rerror` 대신 객체).
-- **check… 말고는 동기로 바로 답해야 한다** — CrudJs가 before/after 이벤트를 기다리지
-  않는다. 서버에 물어봐야 하는 판단은 `checkCrudSave` / `checkCrudDelete`에 `async`로 쓴다
-  (crudbuttons가 `await`로 기다린다).
+- **before…는 `async function`으로 써도 된다** — CrudJs가 `await`로 기다린다. 저장 전
+  검사는 `beforeCrudSave` 한 곳에 위에서 아래로 쓰고, 가벼운 검사(필수 입력)를 먼저,
+  서버 확인(id 중복)을 나중에 둔다(빈 값일 때 서버에 묻지 않게).
+- **`isEnable…`과 `beforeCrudClose`는 바로 답해야 한다**(기다리지 않는다).
 - **저장 안 한 값 경고는 crudbuttons가 한다** — amd는 아무것도 안 해도 된다(아래 "저장 안 한 값").
 - **`isEnable…`은 자주 불린다**(폼 값이 바뀔 때마다). 값만 보고 true/false를 돌려주고,
   포커스 이동·메시지 같은 부수 동작은 넣지 않는다.
@@ -165,22 +187,22 @@ function isEnableAmdDelete(psender, rerror) {
     return true;
 }
 
-async function checkCrudSave(psender, ppara) {      // 서버에 물어보는 검사 — await 가능
-    var res = await fetch(FL_FETCH_URL + '?action=checkId&id=' + encodeURIComponent(psender.getCrud().getValue('id')));
-    var data = await res.json();
+async function beforeCrudSave(psender, ppara) {     // async — 서버 확인을 await할 수 있다
+    var crud = psender.getCrud();
+    var res;
+    var data;
 
-    if (data.exists) {
-        ppara.error = '이미 쓰고 있는 id입니다.';
+    // ① 가벼운 검사 먼저 — 필수 입력(flText = null이면 '', 앞뒤 공백 제거)
+    if (flText(crud.getValue('이름')) === '') {
+        ppara.error = '이름을 입력하세요.';
         return false;
     }
-    return true;
-}
 
-function beforeCrudSave(psender, ppara) {
-    var crud = psender.getCrud();
-
-    if (flText(crud.getValue('이름')) === '') {   // 예: 필수 입력(flText = null이면 '', 앞뒤 공백 제거)
-        ppara.error = '이름을 입력하세요.';
+    // ② 서버에 물어보는 검사는 나중에
+    res = await fetch(FL_FETCH_URL + '?action=checkId&id=' + encodeURIComponent(crud.getValue('id')));
+    data = await res.json();
+    if (data.exists) {
+        ppara.error = '이미 쓰고 있는 id입니다.';
         return false;
     }
     return true;
@@ -201,7 +223,7 @@ function afterCrudSelectRecord(psender, ppara) { }
 ### 4. action(pcmd, pparams, psender)
 
 모든 페이지에 `action`을 두고 코드는 항상 그리로 흐른다. amd가 받으면 좋은 명령
-(바깥에서 이 폼을 움직일 때 — 전부 버튼 iframe에 맡긴다):
+(바깥에서 이 폼을 움직일 때 — 전부 `action_buttons`가 버튼 iframe에 맡긴다):
 
 | pcmd | 누가 보냄 | 할 일 |
 |---|---|---|
@@ -211,6 +233,31 @@ function afterCrudSelectRecord(psender, ppara) { }
 
 창닫기 버튼 자체는 amd의 action을 거치지 않는다 — crudbuttons가 직접 닫는다(5절).
 
+**action 쓰는 법 — 종류별 하위 함수 `action_xxx`**: `action`에는 업무 코드를 넣지 않고,
+case를 겹쳐(VBA의 `Case "a", "b"`처럼) 종류별 하위 함수로 넘기기만 한다. switch가
+커지지 않고, 명령 목록이 한눈에 보인다.
+```js
+function action(pcmd, pparams, psender) {
+    if (!pparams) {
+        pparams = {};
+    }
+
+    switch (pcmd) {
+        case 'close':
+        case 'requery':
+        case 'selectRecord':
+            return action_buttons(pcmd, pparams, psender);
+
+        default:
+            console.warn('xxx_amd.action: 알 수 없는 pcmd - ' + pcmd);
+    }
+}
+
+function action_buttons(pcmd, pparams, psender) {   // 하위 함수도 인자는 action과 같다
+    ...
+}
+```
+
 ### 5. 띄운 쪽에 알리기 / 닫기 — crudbuttons가 한다
 
 amd는 자기가 **팝업 / 다른 화면의 iframe / 단독** 중 어디에 있는지 몰라도 된다.
@@ -218,13 +265,14 @@ amd는 자기가 **팝업 / 다른 화면의 iframe / 단독** 중 어디에 있
 
 | amd가 있는 곳 | `psender.report('saved', {...})` | `psender.setCaption('…')` | 창닫기 |
 |---|---|---|---|
-| **팝업 안** | 팝업의 `action` → 띄운 쪽의 `onAction(ptype, payload, 팝업id)` | 팝업 캡션 | `'closed'` 보고 → 팝업을 닫는다 |
-| **다른 화면의 iframe 안** | 띄운 쪽의 `action('amdReport', {ptype, payload}, amd창)` | 문서 제목 | `'closed'` 보고만(숨길지 지울지는 띄운 쪽이 정한다) |
+| **팝업 안** | 띄운 쪽의 `action('amdReport', {ptype, payload, popupId: 팝업id}, amd창)` | 팝업 캡션 | `'closed'` 보고 → 팝업을 닫는다 |
+| **다른 화면의 iframe 안** | 띄운 쪽의 `action('amdReport', {ptype, payload, popupId: ''}, amd창)` | 문서 제목 | `'closed'` 보고만(숨길지 지울지는 띄운 쪽이 정한다) |
 | **단독(주소창/새 탭)** | 보고할 곳 없음 | 문서 제목(브라우저 탭 글자) | amd 창을 닫는다(스크립트가 연 창일 때만 브라우저가 닫아 준다) |
 
 - 창닫기 순서: `beforeCrudClose`(false면 그만) → `'closed'` 보고 → 위 표대로 닫기.
-- iframe으로 넣는 화면은 `action`에 `case 'amdReport':`를 두고 `pparams.ptype`으로 처리한다.
-  세 번째 인자(amd 창)로 여러 iframe 중 어느 것인지 구분한다.
+- 띄우는 화면은 팝업이든 iframe이든 `action`에 `case 'amdReport':` 하나만 두고
+  `pparams.ptype`으로 처리한다. 여러 개를 띄웠으면 `pparams.popupId`(팝업) 또는
+  세 번째 인자(amd 창)로 어느 것인지 구분한다. Popup의 `onAction`은 쓰지 않는다.
 - 팝업을 찾는 방법: amd 창의 부모(`amd.parent`)에 `Popup`이 있으면
   `amd.parent.Popup.ofWindow(amd)`. `Popup.js`는 `window.Popup = Popup;`으로 자기를 window에
   단다(최상위 `class`는 window 속성이 안 되므로) — 그래야 iframe 안에서 보인다.
@@ -244,14 +292,15 @@ amd는 자기가 **팝업 / 다른 화면의 iframe / 단독** 중 어디에 있
 | crudbuttons → amd (이벤트) | `window.parent.beforeCrudSave(psender, ppara)` 등 | amd의 이벤트 함수 |
 | CrudJs ↔ amd (값) | amd 문서의 `id=필드명` 컨트롤을 직접 읽고 씀 | amd의 컨트롤 |
 | CrudJs → 서버 | `fetch(xxx_fetch.php?action=…)` | fetch PHP |
-| amd → 띄운 쪽 (위로 보고) | 이벤트 안에서 `psender.report('saved', {...})` | crudbuttons가 판단 — 팝업이면 Popup → entry의 `onAction` → entry `action('popupAction')`, iframe이면 띄운 쪽 `action('amdReport')` |
+| amd → 띄운 쪽 (위로 보고) | 이벤트 안에서 `psender.report('saved', {...})` | 띄운 쪽의 `action('amdReport')`(팝업이든 iframe이든) |
 | crudbuttons → 팝업 (창닫기) | `popup.close()` | Popup |
 | Popup 닫힘 → entry | (Popup이 자동으로) | entry의 `onClose` → entry `action('popupClosed')` |
 
-- **위로 보고**는 `psender.report()` 하나로 한다. 팝업이면 entry의 `onAction`에 세 번째
-  인자로 **팝업 id**가, iframe이면 `action`의 세 번째 인자로 **amd 창**이 함께 와서, 같은
-  입력폼을 여러 개 띄워도 구분된다. 보고 이름은 정해져 있다(팝업 → `onAction`, iframe →
-  `'amdReport'`) — 입력폼이 띄운 쪽의 다른 명령 이름에 묶이지 않아, 어느 화면이 띄워도 그대로 쓴다.
+- **규칙: 창과 창 사이의 명령·보고는 전부 `action`으로 한다. 이벤트(`beforeCrudSave` 등)만
+  이름 있는 함수로 부른다** — Access에서 폼의 공개 메서드와 이벤트 프로시저를 나누는 것과 같다.
+- **위로 보고**는 `psender.report()` 하나로 한다. 띄운 쪽은 항상 `action('amdReport')`로 받고,
+  `pparams.popupId`(팝업)나 세 번째 인자(amd 창)로 같은 입력폼을 여러 개 띄워도 구분된다.
+  보고 이름이 `'amdReport'`로 정해져 있어 입력폼이 띄운 쪽의 다른 명령 이름에 묶이지 않는다.
 - **아래로 명령**은 대상 iframe의 `contentWindow.action(pcmd)`로 한다.
 - 그냥 `action('xxx')`라고만 부르면 **자기 페이지의 action**이다.
 
@@ -269,15 +318,15 @@ amd는 자기가 **팝업 / 다른 화면의 iframe / 단독** 중 어디에 있
 
 ### 저장
 1. `isEnableAmdSave`가 false면 버튼이 이미 비활성.
-2. 누르면: CrudJs `validateSchema()`(기본 검사) → `checkCrudSave`(서버 확인, await) →
-   `isEnableAmdSave` → `beforeCrudSave`. 하나라도 걸리면 중단하고 이유를 버튼 옆에 보인다
+2. 누르면: CrudJs `validateSchema()`(기본 검사) → `isEnableAmdSave` →
+   `beforeCrudSave`(await). 하나라도 걸리면 중단하고 이유를 버튼 옆에 보인다
    (서버 저장은 안 한다).
 3. 서버 저장 → 새 PK가 폼의 PK 칸에 들어간다 → `afterCrudSave`.
 4. 지금 값을 기준값으로 기억(수정됨 표시가 꺼진다), 버튼 상태를 다시 정한다(삭제 활성).
 
 ### 삭제
 1. PK가 없거나 `isEnableAmdDelete`가 false면 버튼이 비활성.
-2. 누르면: 확인창 → `checkCrudDelete`(await) → `isEnableAmdDelete` → `beforeCrudDelete` →
+2. 누르면: 확인창 → `isEnableAmdDelete` → `beforeCrudDelete`(await) →
    서버 삭제 → `afterCrudDelete`.
 3. 폼을 비운다(묻지 않음) → `beforeCrudClear` → `afterCrudClear`(신규입력 상태).
 
@@ -308,7 +357,7 @@ amd는 자기가 **팝업 / 다른 화면의 iframe / 단독** 중 어디에 있
 
 ## xxx_fetch.php 계약 (CrudJs 계약)
 
-`fLogin_amd_fetch.php`를 본뜬다(원본 예시는 `src/Model/Crud/crudjs_fetch.php`).
+`fLogin_amd_fetch.php`를 본뜬다(원본 예시는 `src/Model/Crud/crudjs/crudjs_fetch.php`).
 
 | action | 메서드 | 응답 |
 |---|---|---|
@@ -319,7 +368,7 @@ amd는 자기가 **팝업 / 다른 화면의 iframe / 단독** 중 어디에 있
 | `delete&pk=` | POST | `{success, affected}` |
 
 그 밖의 action(예: `fLogin_amd_fetch.php`의 `checkId` — id 중복 확인)은 amd의
-`checkCrudSave` 같은 이벤트가 직접 부르는 것이라 화면마다 자유롭게 둔다.
+`beforeCrudSave` 같은 이벤트가 직접 부르는 것이라 화면마다 자유롭게 둔다.
 
 실패는 전부 `{success:false, error:'…'}`.
 - 테이블 이름은 fetch 파일 안에 고정한다(클라이언트가 고르지 못하게).
@@ -332,8 +381,9 @@ amd는 자기가 **팝업 / 다른 화면의 iframe / 단독** 중 어디에 있
 2. `xxx_amd.php` — 컨트롤을 `id=필드명`으로 배치, 아래에 crudbuttons iframe(`fetch`, `pk`).
 3. 필요한 이벤트만 정의(없는 건 통과). 띄운 쪽에 알릴 일은 `psender.report()`로.
 4. 띄우는 쪽:
-   - 팝업으로: `new Popup({ iframeUrl: 'xxx_amd.php?code=…', onAction, onClose })`
-   - iframe으로: `<iframe src="xxx_amd.php?code=…">` + 자기 `action`에 `case 'amdReport':`
+   - 팝업으로: `new Popup({ iframeUrl: 'xxx_amd.php?code=…', onClose })`
+   - iframe으로: `<iframe src="xxx_amd.php?code=…">`
+   - 어느 쪽이든 자기 `action`에 `case 'amdReport':`를 두고 보고를 받는다.
 
 ## 주의
 

@@ -13,12 +13,12 @@ declare(strict_types=1);
  *  - crudbuttons.js / crudbuttons.php — 폼 아래 iframe에 넣는 재사용 CRUD 버튼(CrudJs 사용)
  *  - fLogin_amd.php / fLogin_amd_fetch.php — tLogin 시범 폼과 그 CrudJs 엔드포인트
  *  - crudbuttons_entry.php(이 파일) — tLogin 목록에서 고르면 fLogin_amd.php를 Popup으로
- *    띄우고, 팝업이 보고하는 콜백(onAction)을 이 화면의 action()으로 받는다.
+ *    띄우고, 입력폼의 보고를 이 화면의 action('amdReport')로 받는다.
  *
- * 흐름: 버튼/목록 → action(pcmd) → 팝업 열기. 팝업의 onAction/onClose →
- * action('popupAction' / 'popupClosed') → 로그 + 필요하면 목록 requery.
+ * 흐름: 버튼/목록 → action(pcmd) → 팝업 열기. 입력폼의 psender.report() →
+ * action('amdReport'), 팝업 onClose → action('popupClosed') → 로그 + 필요하면 목록 requery.
  *
- * 페이지 함수: action(pcmd, pparams, psender) — 아래 switch 참고.
+ * 페이지 함수: action(pcmd, pparams, psender) — 종류별 action_xxx로 나눠 넘긴다(아래 참고).
  */
 for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir = dirname($__bootDir)) {
     if ($__bootDir === dirname($__bootDir)) {
@@ -91,7 +91,7 @@ h1 { font-size: 16px; margin: 0 0 10px; }
         <div class="ce-hint">항목을 고르면(select) 바로 팝업으로 엽니다.</div>
     </div>
     <div class="ce-panel">
-        <h2>콜백 로그 (팝업 onAction / onClose → action)</h2>
+        <h2>콜백 로그 (amdReport / popupClosed → action)</h2>
         <pre id="ce-log"></pre>
     </div>
 </div>
@@ -204,7 +204,7 @@ async function ceRequery(pkeepCode) {
 /**
  * fLogin_amd.php를 팝업으로 연다. pcode가 null이면 신규.
  * poptions: { modal: true/false, animation: 'none'|'small'|'large' } — 생략 가능.
- * 팝업의 보고는 전부 이 화면의 action('popupAction' / 'popupClosed')로 흐른다.
+ * 입력폼의 보고는 action('amdReport'), 팝업이 닫히면 action('popupClosed')로 흐른다.
  */
 function ceOpen(pcode, poptions) {
     var id;
@@ -262,9 +262,8 @@ function ceOpen(pcode, poptions) {
         modal: modal,
         animation: animation,
         position: position,
-        onAction: function (ptype, ppayload, ppopupId) {
-            action('popupAction', { ptype: ptype, payload: ppayload, id: ppopupId });
-        },
+        // 입력폼의 보고(saved/deleted/closed)는 onAction이 아니라 이 화면의
+        // action('amdReport')로 바로 온다(crudbuttons의 report).
         onClose: function (ppopupId) {
             action('popupClosed', { id: ppopupId });
         }
@@ -336,9 +335,9 @@ function ceCloseAll() {
     }
 }
 
-/** 팝업(fLogin_amd.php)의 보고 — 저장/삭제면 목록을 다시 읽는다. */
-function cePopupAction(pptype, ppayload, pid) {
-    ceLog('콜백 ' + pid + ' ← ' + pptype + ' ' + JSON.stringify(ppayload));
+/** 입력폼(fLogin_amd.php)의 보고 — 저장/삭제면 목록을 다시 읽는다. */
+function ceAmdReport(pptype, ppayload, ppopupId) {
+    ceLog('보고 ' + ppopupId + ' ← ' + pptype + ' ' + JSON.stringify(ppayload));
 
     if (pptype === 'saved') {
         ceRequery(ppayload.code);
@@ -361,85 +360,132 @@ function cePopupClosed(pid) {
     ceLog('닫힘 ' + pid);
 }
 
-// ── action — 버튼/목록/팝업 콜백이 전부 이리로 흐른다 ──
+// ── action — 버튼/목록/입력폼 보고가 전부 이리로 흐른다 ──
 
+/**
+ * action(pcmd, pparams, psender) — 이 화면의 창구.
+ * 여기서는 명령을 종류별로 나눠 넘기기만 한다(case를 겹쳐 쓰면 VBA의 Case "a", "b"와 같다).
+ *   action_list   — 목록: requery
+ *   action_open   — 입력폼 열기: openNew / openSelected / openSelectedModeless /
+ *                   openSelectedLarge / openTwo / openTab
+ *   action_popups — 열린 팝업 다루기: requeryPopups / captionLast / closeAll
+ *   action_report — 띄운 쪽에서 알려옴: amdReport(입력폼) / popupClosed(Popup)
+ *   action_log    — 로그: clearLog
+ */
 function action(pcmd, pparams, psender) {
-    var code;
-
     if (!pparams) {
         pparams = {};
     }
 
     switch (pcmd) {
         case 'requery':
-            ceRequery(pparams.code);
-            return;
+            return action_list(pcmd, pparams, psender);
 
         case 'openNew':
-            ceOpen(null);
-            return;
-
         case 'openSelected':
-            code = ceRequirePick();
-            if (code !== null) {
-                ceOpen(code);
-            }
-            return;
-
         case 'openSelectedModeless':
-            code = ceRequirePick();
-            if (code !== null) {
-                ceOpen(code, { modal: false, animation: 'none' });
-            }
-            return;
-
         case 'openSelectedLarge':
-            code = ceRequirePick();
-            if (code !== null) {
-                ceOpen(code, { animation: 'large' });
-            }
-            return;
-
         case 'openTwo':
-            code = ceRequirePick();
-            if (code !== null) {
-                ceOpenTwo(code);
-            }
-            return;
-
         case 'openTab':
-            code = ceRequirePick();
-            if (code !== null) {
-                window.open(CE_FORM_URL + '?code=' + encodeURIComponent(code), '_blank');
-            }
-            return;
+            return action_open(pcmd, pparams, psender);
 
         case 'requeryPopups':
-            ceRequeryPopups();
-            return;
-
         case 'captionLast':
-            ceCaptionLast();
-            return;
-
         case 'closeAll':
-            ceCloseAll();
-            return;
+            return action_popups(pcmd, pparams, psender);
+
+        case 'amdReport':
+        case 'popupClosed':
+            return action_report(pcmd, pparams, psender);
 
         case 'clearLog':
-            document.getElementById('ce-log').textContent = '';
-            return;
-
-        case 'popupAction':
-            cePopupAction(pparams.ptype, pparams.payload, pparams.id);
-            return;
-
-        case 'popupClosed':
-            cePopupClosed(pparams.id);
-            return;
+            return action_log(pcmd, pparams, psender);
 
         default:
             console.warn('crudbuttons_entry.action: 알 수 없는 pcmd - ' + pcmd);
+    }
+}
+
+/** 목록 — 서버에서 다시 읽는다(pparams.code를 주면 그 행을 다시 고른다). */
+function action_list(pcmd, pparams, psender) {
+    switch (pcmd) {
+        case 'requery':
+            ceRequery(pparams.code);
+            return;
+    }
+}
+
+/** 입력폼 열기 — 신규는 바로, 나머지는 목록에서 고른 행으로 연다. */
+function action_open(pcmd, pparams, psender) {
+    var code;
+
+    if (pcmd === 'openNew') {
+        ceOpen(null);
+        return;
+    }
+
+    // 여기부터는 목록에서 고른 행이 있어야 한다.
+    code = ceRequirePick();
+    if (code === null) {
+        return;
+    }
+
+    switch (pcmd) {
+        case 'openSelected':
+            ceOpen(code);
+            return;
+        case 'openSelectedModeless':
+            ceOpen(code, { modal: false, animation: 'none' });
+            return;
+        case 'openSelectedLarge':
+            ceOpen(code, { animation: 'large' });
+            return;
+        case 'openTwo':
+            ceOpenTwo(code);
+            return;
+        case 'openTab':
+            window.open(CE_FORM_URL + '?code=' + encodeURIComponent(code), '_blank');
+            return;
+    }
+}
+
+/** 열린 팝업 다루기 — requery 보내기, 캡션 바꾸기, 모두 닫기. */
+function action_popups(pcmd, pparams, psender) {
+    switch (pcmd) {
+        case 'requeryPopups':
+            ceRequeryPopups();
+            return;
+        case 'captionLast':
+            ceCaptionLast();
+            return;
+        case 'closeAll':
+            ceCloseAll();
+            return;
+    }
+}
+
+/**
+ * 띄운 쪽에서 알려옴.
+ *   amdReport   — 입력폼의 psender.report() → { ptype, payload, popupId }
+ *   popupClosed — Popup의 onClose → { id }
+ */
+function action_report(pcmd, pparams, psender) {
+    switch (pcmd) {
+        case 'amdReport':
+            ceAmdReport(pparams.ptype, pparams.payload, pparams.popupId);
+            return;
+        case 'popupClosed':
+            cePopupClosed(pparams.id);
+            return;
+    }
+}
+
+/** 로그 — 지우기. */
+function action_log(pcmd, pparams, psender) {
+    switch (pcmd) {
+        case 'clearLog':
+            document.getElementById('ce-log').textContent = '';
+            return;
     }
 }
 

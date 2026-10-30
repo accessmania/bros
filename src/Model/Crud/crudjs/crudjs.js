@@ -67,12 +67,11 @@
  * - save/delete/selectRecord/clear 각각 _before/_after 훅을 갖고,
  *   소비자가 인스턴스에 직접 함수를 대입해서 주입한다(Popup.onAction과
  *   동일한 관용구) — validate()도 같은 방식으로 주입, save() 내부에서
- *   save_before 단계로 호출된다((3)/(4)). 이 훅은 항상 동기로 호출되고
- *   `=== false`만 취소 신호로 본다 — 비동기(서버 fetch 등)로 무언가를
- *   먼저 해야 하는 소비자는 그걸 save_before에 등록하지 말고, 소비자
- *   자신의 저장 함수 안에서 먼저 그 작업을 끝낸 뒤 `save()`를 부르면
- *   된다(예: `deco_amd_amd.php`의 `_save매출()` — calc()를 먼저 기다린
- *   뒤 obj매출.save()를 호출).
+ *   save_before 단계로 호출된다((3)/(4)). [2026-10-30] _before 훅은
+ *   await로 기다린다 — 동기 함수도 되고, 서버에 물어봐야 하면 async
+ *   함수(Promise)를 돌려줘도 된다. 결과가 `=== false`일 때만 취소다.
+ *   그래서 save/deleteRecord/selectRecord/deleteBulk뿐 아니라 clear()와
+ *   loadRecord()도 Promise<boolean>을 돌려준다. validate()는 여전히 동기.
  * - validateSchema()는 소비자가 안 만들어도 항상 도는 검사다 — 서버가
  *   전해준 스키마의 nullable/maxLength/type만 보고 "DB가 어차피 거부할
  *   값"을 미리 걸러낸다. 소비자의 validate()는 이 검사로는 못 잡는
@@ -566,8 +565,8 @@ class CrudJs {
     /**
      * clear() — 모든 필드를 빈 값으로 되돌린다(스키마 정보(`this.schema`)
      * 는 전혀 안 건드림 — 서버 `Crud::clear()`와 같은 원칙). 서버 왕복이
-     * 없어 다른 세 동작과 달리 동기적으로 끝나지만, clear_before가
-     * false를 반환하면 save_before/delete_before/selectRecord_before와
+     * 없지만 clear_before(async 가능)를 기다려야 해서 Promise를 돌려준다.
+     * clear_before가 false를 반환하면 save_before/delete_before/selectRecord_before와
      * 동일하게 그 자리에서 멈추고 실제로는 아무 것도 안 지운다.
      * [2026-09-14 후속] 단일 레코드(_data)뿐 아니라 다중 레코드(커서)
      * 모드 상태(_recordSet/_cursor/_dirtyKeys/_deletedKeys)도 함께
@@ -576,13 +575,13 @@ class CrudJs {
      * 초기화). 커서 위치/건수를 화면에 별도로 표시하는 소비자(예:
      * crudjs_entry.php의 다중 레코드 모드 UI)는 clear() 이후 그 표시도
      * 직접 갱신해야 한다(crudjs 자신은 그 UI를 모른다).
-     * @returns {boolean} 실제로 초기화됐으면 true, clear_before가 막았으면 false
+     * @returns {Promise<boolean>} 실제로 초기화됐으면 true, clear_before가 막았으면 false
      */
-    clear() {
+    async clear() {
         this._lastError = null;
 
         if (typeof this.clear_before === 'function') {
-            if (this.clear_before() === false) {
+            if ((await this.clear_before()) === false) {
                 if (!this._lastError) {
                     this._lastError = '화면 초기화가 취소되었습니다(clear_before).';
                 }
@@ -976,7 +975,7 @@ class CrudJs {
      * 알아서 정한다.
      * @returns {Promise<boolean>} 저장 성공 여부
      */
-    save() {
+    async save() {
         var self = this;
         this._lastError = null;
         this._validationMessage = null;
@@ -1012,7 +1011,7 @@ class CrudJs {
         }
 
         if (typeof this.save_before === 'function') {
-            if (this.save_before() === false) {
+            if ((await this.save_before()) === false) {
                 if (!this._lastError) {
                     this._lastError = '저장이 취소되었습니다(save_before).';
                 }
@@ -1061,12 +1060,12 @@ class CrudJs {
      * deleteRecord() — 현재 화면의 PK 필드값으로 서버 레코드를 삭제한다.
      * @returns {Promise<boolean>}
      */
-    deleteRecord() {
+    async deleteRecord() {
         var self = this;
         this._lastError = null;
 
         if (typeof this.delete_before === 'function') {
-            if (this.delete_before() === false) {
+            if ((await this.delete_before()) === false) {
                 if (!this._lastError) {
                     this._lastError = '삭제가 취소되었습니다(delete_before).';
                 }
@@ -1172,12 +1171,12 @@ class CrudJs {
      * @param {string|number} key
      * @returns {Promise<boolean>}
      */
-    selectRecord(key) {
+    async selectRecord(key) {
         var self = this;
         this._lastError = null;
 
         if (typeof this.selectRecord_before === 'function') {
-            if (this.selectRecord_before() === false) {
+            if ((await this.selectRecord_before()) === false) {
                 if (!this._lastError) {
                     this._lastError = 'selectRecord가 취소되었습니다(selectRecord_before).';
                 }
@@ -1218,20 +1217,20 @@ class CrudJs {
      * loadRecord(row) — [2026-09-18 신설] `selectRecord(key)`와 결과는
      * 동일하지만(레코드셋 크기 1로 화면에 즉시 반영) **서버에 다시 묻지
      * 않는다** — 호출부가 이미(예: 그리드의 `SELECT *` 결과) 그 행 전체를
-     * 들고 있어 네트워크 왕복이 낭비인 경우를 위한 동기 버전이다
+     * 들고 있어 네트워크 왕복이 낭비인 경우를 위한 버전이다
      * (`selectRecord()`에서 `fetch()` 왕복만 빼고 나머지는 동일 — 훅도
      * 같은 이름(`selectRecord_before`/`_after`)을 그대로 존중해, 소비자
      * 입장에서 "네트워크로 왔는지 이미 갖고 있던 값인지"를 구분할 필요가
-     * 없다). `clear()`와 마찬가지로 네트워크가 없으니 `Promise`가 아니라
-     * 평범한 boolean을 반환한다.
+     * 없다). 네트워크는 없지만 `clear()`와 마찬가지로 selectRecord_before
+     * (async 가능)를 기다려야 해서 Promise를 돌려준다.
      * @param {object} row
-     * @returns {boolean}
+     * @returns {Promise<boolean>}
      */
-    loadRecord(row) {
+    async loadRecord(row) {
         this._lastError = null;
 
         if (typeof this.selectRecord_before === 'function') {
-            if (this.selectRecord_before() === false) {
+            if ((await this.selectRecord_before()) === false) {
                 if (!this._lastError) {
                     this._lastError = 'selectRecord가 취소되었습니다(selectRecord_before).';
                 }
@@ -1683,7 +1682,7 @@ class CrudJs {
      * @returns {Promise<{deleteResults: object[]}|null>} 실패(또는 pks가
      *   빈 배열)면 null(getError() 참고).
      */
-    deleteBulk(pks) {
+    async deleteBulk(pks) {
         var self = this;
         this._lastError = null;
 
@@ -1693,7 +1692,7 @@ class CrudJs {
         }
 
         if (typeof this.delete_before === 'function') {
-            if (this.delete_before() === false) {
+            if ((await this.delete_before()) === false) {
                 if (!this._lastError) {
                     this._lastError = '삭제가 취소되었습니다(delete_before).';
                 }
