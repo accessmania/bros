@@ -268,7 +268,11 @@ h1 { font-size: 1.1rem; margin: 0 0 12px; }
    확실히 이기게 했다 — 특이도가 낮은 `.b22-modal-save-btn`(class만)
    그대로였다면 공통 베이스가 되레 font-weight 등 일부 속성을 덮어써버려
    "바꿨는데 안 바뀐 것처럼 보이는" 원인이 될 수 있었음. */
-.b22-modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.b22-modal-footer { display: flex; justify-content: flex-start; gap: 8px; margin-top: 14px; }
+/* 창닫기는 오른쪽 끝, 신규입력은 무채색 보조 버튼(고객사 팝업과 같은 배치). */
+.b22-modal-footer button.b22-modal-cancel-btn { margin-left: auto; }
+.b22-modal-footer button.b22-modal-new-btn { background: #f3f4f6; color: #374151; }
+.b22-modal-footer button.b22-modal-new-btn:hover { background: #e5e7eb; }
 .b22-modal-footer button {
     padding: 4px 12px; border: none; border-radius: 4px; font-size: 0.82rem;
     font-weight: 500; cursor: pointer; transition: background-color 0.15s ease;
@@ -312,10 +316,12 @@ h1 { font-size: 1.1rem; margin: 0 0 12px; }
                 <div class="b22-check-list" id="b22-add-list"></div>
             </div>
         </div>
+        <!-- 버튼 구성은 고객사 팝업과 같게(2026-10-20): 저장/삭제/신규입력 ... 창닫기 -->
         <div class="b22-modal-footer">
-            <button type="button" class="b22-modal-delete-btn" id="b22-modal-delete-btn">삭제</button>
-            <button type="button" class="b22-modal-cancel-btn" id="b22-modal-cancel-btn">취소</button>
             <button type="button" class="b22-modal-save-btn" id="b22-modal-save-btn">저장</button>
+            <button type="button" class="b22-modal-delete-btn" id="b22-modal-delete-btn">삭제</button>
+            <button type="button" class="b22-modal-new-btn" id="b22-modal-new-btn">신규입력</button>
+            <button type="button" class="b22-modal-cancel-btn" id="b22-modal-cancel-btn">창닫기</button>
         </div>
     </div>
 </div>
@@ -380,7 +386,6 @@ function b22OpenModal(values, key) {
     var existingAuthstring = values ? (values[B22_AUTHSTRING_FIELD] || '') : '';
     b22RenderCheckList('b22-ribbon-list', B22_RIBBON_ITEMS, existingAuthstring, B22_RIBBON_DEBUG);
     b22RenderCheckList('b22-add-list', B22_ADD_ITEMS, existingAuthstring, B22_ADD_DEBUG);
-    document.getElementById('b22-modal-delete-btn').style.display = key ? '' : 'none';
     document.getElementById('b22-modal').removeAttribute('hidden');
 }
 
@@ -424,7 +429,12 @@ function b22Save() {
         .then(function (data) {
             var result = (data.results || [])[0];
             if (result && result.success) {
-                b22CloseModal();
+                // 저장해도 창은 그대로 둔다(2026-10-20, 고객사 팝업과 같게). 신규였으면
+                // 새 키(newCode)를 받아 이후 저장/삭제가 그 레코드를 가리키게 한다.
+                if (!code && result.newCode) {
+                    document.getElementById('b22-modal-code').value = result.newCode;
+                    document.getElementById('b22-modal-title').textContent = '권한 수정';
+                }
                 AGGrid.instance('권한').requery();
             } else {
                 window.alert('저장 실패: ' + (result && result.message ? result.message : '알 수 없는 오류'));
@@ -435,9 +445,20 @@ function b22Save() {
         });
 }
 
+// 신규입력 — 입력란과 체크를 비우고 새 권한 상태로 바꾼다(저장해야 실제로 생긴다).
+function b22New() {
+    b22OpenModal(null, null);
+    document.getElementById('b22-modal-authname').focus();
+}
+
+// 삭제 — 저장 전 신규면 창만 닫는다(고객사 팝업과 같은 규칙).
 function b22Delete() {
     var code = document.getElementById('b22-modal-code').value;
-    if (!code || !window.confirm('이 권한을 삭제하시겠습니까?')) {
+    if (!code) {
+        b22CloseModal();
+        return;
+    }
+    if (!window.confirm('이 권한을 삭제하시겠습니까?')) {
         return;
     }
     fetch(B22_FETCH_URL + '?action=delete', {
@@ -464,6 +485,7 @@ document.getElementById('b22-modal-close-btn').addEventListener('click', b22Clos
 document.getElementById('b22-modal-cancel-btn').addEventListener('click', b22CloseModal);
 document.getElementById('b22-modal-save-btn').addEventListener('click', b22Save);
 document.getElementById('b22-modal-delete-btn').addEventListener('click', b22Delete);
+document.getElementById('b22-modal-new-btn').addEventListener('click', b22New);
 
 new AGGrid({
     gridId: '권한',

@@ -107,6 +107,20 @@ VBA식으로 쓰더라도 아래는 문법 취향이 아니라 사고를 막는 
 - 저장 전 검사는 `beforeCrudSave` 한 곳에 위에서 아래로(가벼운 검사 먼저, 서버 확인은 `await`로 나중에).
 - 입력폼 → 띄운 쪽 보고는 `psender.report(ptype, payload)` → 띄운 쪽 `action('amdReport', …)`.
 
+## 4-1. 탭 화면 — 새 탭은 다 그린 뒤 보이고, 한 번 뜬 화면은 다시 열지 않는다
+- **새 탭 숨김(index가 한다)**: index가 **새로 연 탭만** 숨긴 채(visibility:hidden, "불러오는 중...")
+  그리고, 다 그려지면 보인다. 탭 전환·같은 탭 재사용에는 해당 없다.
+  - 값을 서버에서 받아 채우는 화면은 `var TAB_READY_MANUAL = true;`를 두고, 다 그렸으면
+    `window.parent.action('tabReady', {}, window)`를 **한 번** 보낸다. 무엇이 "다 그림"인지는 화면이 정한다.
+  - 이 표시가 없는 화면은 iframe load 때 보인다. 표시가 있는데 tabReady가 안 오면 load 5초 뒤 보인다.
+  - 예: `workspace/inquiry/inquiryContent_entry.php` — 입력폼 값 + talk + 처음 보이는 하위폼
+    (하위폼은 AGGrid `onDataLoaded`에서 부모에 `action('subformReady', {key})`)을 센다(icMarkReady).
+- **화면 재사용**: 한 레코드를 보여주는 탭 화면(입력폼 + 하위폼)이 이미 떠 있으면 다시 열지 않고
+  `action('openXxx', {code})`로 code만 바꾼다 — 입력폼은 crudbuttons의 `selectRecord`/`clear`(CrudJs
+  스키마는 처음 한 번만), 하위폼은 각자 `action('setParent', {code})`, 신규('new')면 하위폼 iframe은
+  숨기기만 한다. index 탭 제목은 `action('setTabTitle', {id, title, activate})`(iframe을 다시 불러오지 않음).
+  예: `inquiryContent_entry.php`의 `openInquiry` / `icApplyCode`, 목록 `inquiry_entry.php`의 `openInquiryContent`.
+
 ## 5. 작업 방식
 - 새 부품·규칙을 만들면 **그 폴더의 md에 사용법과 원리**를 적는다(다른 AI도 md만 읽고 알 수 있게).
 - 코드를 쓴 뒤 위 규칙을 지켰는지 스스로 확인한다. JS는 `node --check`로 문법 검사.

@@ -8,6 +8,8 @@ declare(strict_types=1);
  * 조회는 inquiryContent_발주히스토리_fetch.php.
  *
  * 페이지 함수: requery() / action('requery') — 다시 불러온다.
+ *  - action('setParent', {code}) — 부모 문의 code를 바꿔 다시 불러온다. 문의확인 화면이
+ *    페이지를 다시 열지 않고 재사용할 때(다른 문의를 더블클릭) 부른다.
  */
 for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir = dirname($__bootDir)) {
     if ($__bootDir === dirname($__bootDir)) {
@@ -80,6 +82,7 @@ new AGGrid({
     showSearch: false,
     showAddRow: false,
     showDeleteColumn: false,
+    onDataLoaded: function () { reportReady(); },
     columns: (function (columns) {
         // code 계열(int)은 번호라 천단위 콤마를 붙이지 않는다.
         columns.forEach(function (col) {
@@ -91,6 +94,17 @@ new AGGrid({
     })(<?= json_encode($columns, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>)
 });
 
+/**
+ * reportReady() — 데이터를 그렸으면 부모(문의확인)에게 action('subformReady', {key})로
+ * 알린다. 부모는 새 탭이 다 그려졌는지 세는 데 쓴다(다 되면 index에 tabReady).
+ */
+function reportReady() {
+    if (window.parent === window || typeof window.parent.action !== 'function') {
+        return;
+    }
+    window.parent.action('subformReady', { key: <?= json_encode($gridId, JSON_UNESCAPED_UNICODE) ?> }, window);
+}
+
 /** requery() — 다시 불러온다. */
 function requery() {
     var grid = AGGrid.instance(<?= json_encode($gridId, JSON_UNESCAPED_UNICODE) ?>);
@@ -99,9 +113,30 @@ function requery() {
     }
 }
 
+/**
+ * setParent(pcode) — 부모 문의 code를 바꾼다. 그리드의 fetch 주소(?code=)만 바꾸고 다시
+ * 불러온다(페이지는 다시 열지 않는다). AGGrid는 요청할 때마다 fetchUrl을 읽는다.
+ */
+function setParent(pcode) {
+    var grid = AGGrid.instance(<?= json_encode($gridId, JSON_UNESCAPED_UNICODE) ?>);
+
+    if (!grid) {
+        return;
+    }
+    grid.fetchUrl = grid.fetchUrl.split('?')[0] + '?code=' + encodeURIComponent(pcode);
+    if (grid.gridApi) {
+        grid.requery();
+    }
+}
+
 /** action(pcmd, pparams, psender) — 부모(inquiryContent_entry / index)가 부르는 창구. */
 function action(pcmd, pparams, psender) {
+    if (!pparams) {
+        pparams = {};
+    }
     switch (pcmd) {
+        case 'setParent':
+            return setParent(pparams.code);
         case 'requery':
             return requery();
         default:

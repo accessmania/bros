@@ -123,13 +123,22 @@ entry (crudbuttons_entry.php)                       ← 목록/버튼, 입력폼
 <select id="권한code">…</select>
 ```
 - fetch 쪽 화이트리스트에 있는 필드만 다뤄진다. 화면에 없는 필드는 CrudJs 안에만 값이 있다.
-- 숫자 필드는 CrudJs가 천단위 콤마를 붙여 보여주고, 읽을 때 뗀다.
+- 숫자 필드는 CrudJs가 천단위 콤마를 붙여 보여주고, 읽을 때 뗀다. 단 **번호(PK, 이름이 `code`로
+  끝나는 필드)는 콤마 없이** 보인다(그리드의 code 열과 같은 규칙).
 - **bit 필드는 체크박스**(`<input type="checkbox" id="필드">`)를 쓰면 된다 — CrudJs가
   `1`/`'1'`/`true`/`-1`은 체크, `0`/`'0'`/빈 값은 해제로 보이고, 저장할 때는 `1`/`0`으로 보낸다.
 - **날짜 필드**는 CrudJs가 `YYYY-MM-DD`(시각이 있으면 `YYYY-MM-DD HH:MM`)로 보여준다 —
   서버가 dblib 형식(`Sep 30 2026 12:00:00:000AM`)으로 보내도 마찬가지. 일반 `text`,
   `<input type="date">`, `<input type="datetime-local">` 모두 맞는 형식으로 채워진다.
   time 타입은 `HH:MM`.
+
+### 1-1. 바탕색 — PK가 없으면 흰색, 있으면 원래 색
+- crudbuttons가 버튼 상태를 정할 때마다(`refresh`) amd 문서의 `body`에 **PK가 없으면(신규)
+  `cb-no-pk` 클래스**를 붙이고, 있으면 뗀다. 흰색 규칙(`body.cb-no-pk { background-color: #fff !important; }`)은
+  crudbuttons가 amd 문서에 처음 한 번 넣는다 — **amd는 아무것도 안 해도 된다.**
+- 그래서 열기/신규입력/저장(신규 → PK 생김)/삭제 뒤마다 바탕색이 맞춰진다. CrudJs 준비 전에는 원래 색이다.
+- body 말고 박스 등도 같은 색을 쓰는 화면은 `body.cb-no-pk`에서 자기 색 변수를 바꾼다
+  (예: 문의확인 `body.cb-no-pk { --ic-bg: #ffffff; }`).
 
 ### 2. crudbuttons iframe
 
@@ -141,6 +150,29 @@ $buttonsSrc = APP_BASE_URL . '/src/Model/Crud/crudbuttons/crudbuttons.php?fetch=
 <iframe class="cb-frame" id="cb-frame" src="<?= htmlspecialchars($buttonsSrc, ENT_QUOTES, 'UTF-8') ?>"></iframe>
 ```
 - `pk`가 비어 있으면 신규(빈 폼)로 시작한다.
+- `&close=0`을 붙이면 **창닫기 버튼을 숨긴다**(생략하면 보인다). 입력폼을 감싼 쪽이 따로 닫는
+  화면에 쓴다 — 예: index 탭 자체인 문의확인(`workspace/inquiry/inquiryContent_entry.php`)은 탭의 X로 닫는다.
+  버튼만 숨기므로 바깥에서 `action('close')`로 닫는 길은 그대로 있다.
+- `&keep=필드1,필드2`를 붙이면 **신규입력(clear) 때 그 필드는 비우지 않고 값을 남긴다**(쉼표로 구분,
+  주소에 넣을 때 `rawurlencode`). 같은 부모의 새 행을 이어서 입력할 때 쓴다 — 예: 문의내역 팝업
+  (`workspace/inquiry/inquiryContent_문의내용_amd.php`)의 `keep=parentcode`(부모 문의의 code).
+  - 순서: `beforeCrudClear` 통과 → 남길 값 담기 → 폼 비우기 → 남길 값 되돌려 넣기 → `afterCrudClear`
+    → 기준값 기억. 그래서 `afterCrudClear`와 "수정됨" 판단 모두 남긴 값을 본다.
+  - 삭제 뒤의 clear에도 똑같이 적용된다.
+  - **PK는 넣어도 무시한다**(콘솔 경고). PK가 남으면 신규가 아니라 수정(덮어쓰기)이 되기 때문이다.
+  - 스키마(fetch의 화이트리스트)에 없는 필드는 건너뛴다.
+- `&closeconfirm=0`을 붙이면 **창닫기 때 저장 안 한 값이 있어도 묻지 않고 닫는다**(입력 중이던 값은
+  버려진다. 생략하면 지금처럼 묻는다). `beforeCrudClose`는 그대로 불린다. 바깥에서 `action('close')`로
+  닫을 때도 같다. 예: 문의내역 팝업(`inquiryContent_문의내용_amd.php`).
+  - 신규입력·다른 레코드 열기·다시 읽기 때의 "버리고 …할까요?"는 그대로 묻는다(창닫기만 해당).
+- `&required=필드1,필드2`를 붙이면 **필수입력 필드**가 된다(쉼표로 구분, `rawurlencode`). 저장할 때
+  하나라도 비어 있으면(앞뒤 공백만 있는 것 포함) 저장하지 않고 버튼 옆에
+  "저장 실패: 모델명, 품목코드: 값을 입력해야 합니다."를 보이며 첫 빈 칸으로 커서를 옮긴다.
+  - 순서: 기본 스키마 검사(CrudJs) → **필수입력** → `isEnableAmdSave` → `beforeCrudSave`.
+    그래서 `beforeCrudSave`에 필수입력 검사를 따로 쓸 필요가 없다(업무 규칙만 쓴다).
+  - CrudJs의 `validate` 자리를 crudbuttons가 쓴다(amd가 `crud.validate`를 따로 달지 않는다).
+  - 스키마에 없는 필드는 건너뛴다(콘솔 경고).
+  - 예: 문의내역 팝업의 `required=모델명,품목코드`.
 - `fetch`는 이 앱 안의 주소(`APP_BASE_URL`로 시작)만 받는다.
 
 ### 3. 이벤트 함수 — 전부 선택(없으면 "통과")
@@ -230,6 +262,11 @@ function afterCrudSelectRecord(psender, ppara) { }
 | `'requery'` | entry 등 바깥 | 버튼 iframe의 `action('requery')`에 맡긴다. |
 | `'selectRecord'` `{pk}` | entry 등 바깥 | 버튼 iframe의 `action('selectRecord', {pk})`에 맡긴다. |
 | `'close'` | entry 등 바깥 | 버튼 iframe의 `action('close')`에 맡긴다(창닫기 버튼과 같은 길). |
+
+amd가 버튼 iframe에 물을 수 있는 것: `action('isDirty')` → 저장 안 한 값이 있으면 `true`.
+아무것도 바꾸지 않는다. "수정 중이면 조용히 건너뛰기"에 쓴다 — 버튼 iframe의 `requery`는
+수정 중이면 확인창을 띄우므로, index가 탭을 옮길 때 부르는 requery처럼 묻지 않고
+넘어가야 할 때는 먼저 `isDirty`로 확인한다(예: `workspace/inquiry/inquiryContent_entry.php`).
 
 창닫기 버튼 자체는 amd의 action을 거치지 않는다 — crudbuttons가 직접 닫는다(5절).
 

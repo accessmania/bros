@@ -5,10 +5,16 @@ declare(strict_types=1);
  * [문의확인 > "문의" 탭 — inquiryContent_entry.php의 iframe 안에 뜨는 페이지]
  * t문의내역 중 parentcode = ?code(t문의.code)인 행을 보여준다. 보기 전용 —
  * 편집/페이저 없음. 그리드 위에 신규추가/견적자료/발주자료/ECount 버튼 —
- * 신규추가는 문의확인 화면을 신규로 다시 연다(addNew → 부모의 icNew), 나머지는 다음 단계.
+ * 신규추가는 부모의 action('addnew_문의내용')을 부른다(addNew),
+ * 나머지는 다음 단계.
  * 조회는 inquiryContent_문의내용_fetch.php.
  *
  * 페이지 함수: requery() / action('requery') — 다시 불러온다.
+ * 행 더블클릭 → 부모의 action('selectRecord_문의내용', {code}) — 문의내역 팝업(openDetail).
+ *  - action('requery', {code}) — 다시 불러오고, code를 주면 그 행으로 커서를 옮긴다.
+ *  - action('selectRecord', {code}) — 그 행으로 커서를 옮긴다.
+ *  - action('setParent', {code}) — 부모 문의 code를 바꿔 다시 불러온다. 문의확인 화면이
+ *    페이지를 다시 열지 않고 재사용할 때(다른 문의를 더블클릭) 부른다.
  */
 for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir = dirname($__bootDir)) {
     if ($__bootDir === dirname($__bootDir)) {
@@ -91,6 +97,8 @@ new AGGrid({
     showSearch: false,
     showAddRow: false,
     showDeleteColumn: false,
+    onDataLoaded: function () { reportReady(); },
+    onRowDblClick: function (prow, pkey) { openDetail(pkey); },
     columns: (function (columns) {
         // code 계열(int)은 번호라 천단위 콤마를 붙이지 않는다.
         columns.forEach(function (col) {
@@ -102,35 +110,98 @@ new AGGrid({
     })(<?= json_encode($columns, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>)
 });
 
-/** requery() — 다시 불러온다. */
-function requery() {
+/**
+ * reportReady() — 데이터를 그렸으면 부모(문의확인)에게 action('subformReady', {key})로
+ * 알린다. 부모는 새 탭이 다 그려졌는지 세는 데 쓴다(다 되면 index에 tabReady).
+ */
+function reportReady() {
+    if (window.parent === window || typeof window.parent.action !== 'function') {
+        return;
+    }
+    window.parent.action('subformReady', { key: <?= json_encode($gridId, JSON_UNESCAPED_UNICODE) ?> }, window);
+}
+
+/**
+ * openDetail(pcode) — 행을 더블클릭하면 부모(문의확인)에 action('selectRecord_문의내용', {code})를
+ * 보낸다. 부모가 문의내역 팝업(비모달, 화면 오른쪽)을 띄우거나, 이미 떠 있으면 그 팝업에
+ * 이 행을 보여준다. 이 페이지만 따로 열었으면 아무것도 안 한다.
+ */
+function openDetail(pcode) {
+    if (window.parent === window || typeof window.parent.action !== 'function') {
+        return;
+    }
+    window.parent.action('selectRecord_문의내용', { code: pcode }, window);
+}
+
+/**
+ * requery(pcode) — 다시 불러온다. pcode(t문의내역.code)를 주면 다 불러온 뒤 그 행으로
+ * 커서를 옮긴다(selectRecord) — 문의내역 팝업에서 저장한 행이 보이게.
+ */
+function requery(pcode) {
     var grid = AGGrid.instance(<?= json_encode($gridId, JSON_UNESCAPED_UNICODE) ?>);
-    if (grid && grid.gridApi) {
+
+    if (!grid || !grid.gridApi) {
+        return;
+    }
+    return Promise.resolve(grid.requery()).then(function () {
+        if (pcode !== null && pcode !== undefined && String(pcode) !== '') {
+            selectRecord(pcode);
+        }
+    });
+}
+
+/** selectRecord(pcode) — 그리드의 커서를 t문의내역.code가 pcode인 행에 맞춘다(그 행이 보이게 스크롤). */
+function selectRecord(pcode) {
+    var grid = AGGrid.instance(<?= json_encode($gridId, JSON_UNESCAPED_UNICODE) ?>);
+
+    if (!grid || !grid.gridApi) {
+        return;
+    }
+    grid.selectRow(pcode);
+}
+
+/**
+ * setParent(pcode) — 부모 문의 code를 바꾼다. 그리드의 fetch 주소(?code=)만 바꾸고 다시
+ * 불러온다(페이지는 다시 열지 않는다). AGGrid는 요청할 때마다 fetchUrl을 읽는다.
+ */
+function setParent(pcode) {
+    var grid = AGGrid.instance(<?= json_encode($gridId, JSON_UNESCAPED_UNICODE) ?>);
+
+    if (!grid) {
+        return;
+    }
+    grid.fetchUrl = grid.fetchUrl.split('?')[0] + '?code=' + encodeURIComponent(pcode);
+    if (grid.gridApi) {
         grid.requery();
     }
 }
 
 /** action(pcmd, pparams, psender) — 부모(inquiryContent_entry / index)가 부르는 창구. */
 function action(pcmd, pparams, psender) {
+    if (!pparams) {
+        pparams = {};
+    }
     switch (pcmd) {
+        case 'setParent':
+            return setParent(pparams.code);
         case 'requery':
-            return requery();
+            return requery(pparams.code);
+        case 'selectRecord':
+            return selectRecord(pparams.code);
         default:
             console.warn('문의내용.action: 알 수 없는 pcmd - ' + pcmd);
     }
 }
 
 /**
- * 신규추가 — 입력폼의 신규추가와 같다: 이 탭을 품은 문의확인 화면의 icNew()를
- * 불러, 같은 "문의확인" 탭을 신규(code=new)로 다시 연다(저장 안 한 값이 있으면
- * 그쪽에서 묻는다). 이 페이지만 따로 열었으면 이 창을 신규 문의확인 화면으로 바꾼다.
+ * 신규추가 — 이 탭을 품은 문의확인 화면에 action('addnew_문의내용')을 보낸다
+ * (부모가 처리 — 지금은 alert만). 이 페이지만 따로 열었으면 아무것도 안 한다.
  */
 function addNew() {
-    if (window.parent !== window && typeof window.parent.icNew === 'function') {
-        window.parent.icNew();
+    if (window.parent === window || typeof window.parent.action !== 'function') {
         return;
     }
-    location.href = <?= json_encode(APP_BASE_URL . '/workspace/inquiry/inquiryContent_entry.php?code=new', JSON_UNESCAPED_SLASHES) ?>;
+    window.parent.action('addnew_문의내용', {}, window);
 }
 
 // 버튼 — 신규추가 말고는 동작을 다음 단계에서 붙인다(지금은 안내만).

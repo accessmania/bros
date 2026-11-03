@@ -4,10 +4,16 @@ declare(strict_types=1);
 /**
  * [문의확인 > "견적" 탭 — inquiryContent_entry.php의 iframe 안에 뜨는 페이지]
  * t문의_견적산출 중 parentcode = ?code(t문의.code)인 행을 보여준다. 보기 전용 —
- * 편집/페이저 없음. 그리드 위에 신규추가 버튼(동작은 다음 단계).
+ * 편집/페이저 없음. 그리드 위에 신규추가 버튼 — 부모의 action('addnew_견적')을 부른다(addNew →
+ * 견적 팝업 inquiryContent_견적_amd.php를 신규로).
  * 조회는 inquiryContent_견적_fetch.php.
  *
  * 페이지 함수: requery() / action('requery') — 다시 불러온다.
+ * 행 더블클릭 → 부모의 action('selectRecord_견적', {code}) — 견적 팝업(openQuote).
+ *  - action('requery', {code}) — 다시 불러오고, code를 주면 그 행으로 커서를 옮긴다.
+ *  - action('selectRecord', {code}) — 그 행으로 커서를 옮긴다.
+ *  - action('setParent', {code}) — 부모 문의 code를 바꿔 다시 불러온다. 문의확인 화면이
+ *    페이지를 다시 열지 않고 재사용할 때(다른 문의를 더블클릭) 부른다.
  */
 for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir = dirname($__bootDir)) {
     if ($__bootDir === dirname($__bootDir)) {
@@ -87,6 +93,8 @@ new AGGrid({
     showSearch: false,
     showAddRow: false,
     showDeleteColumn: false,
+    onDataLoaded: function () { reportReady(); },
+    onRowDblClick: function (prow, pkey) { openQuote(pkey); },
     columns: (function (columns) {
         // code 계열(int)은 번호라 천단위 콤마를 붙이지 않는다.
         columns.forEach(function (col) {
@@ -98,30 +106,101 @@ new AGGrid({
     })(<?= json_encode($columns, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>)
 });
 
-/** requery() — 다시 불러온다. */
-function requery() {
+/**
+ * reportReady() — 데이터를 그렸으면 부모(문의확인)에게 action('subformReady', {key})로
+ * 알린다. 부모는 새 탭이 다 그려졌는지 세는 데 쓴다(다 되면 index에 tabReady).
+ */
+function reportReady() {
+    if (window.parent === window || typeof window.parent.action !== 'function') {
+        return;
+    }
+    window.parent.action('subformReady', { key: <?= json_encode($gridId, JSON_UNESCAPED_UNICODE) ?> }, window);
+}
+
+/**
+ * openQuote(pcode) — 행을 더블클릭하면 부모(문의확인)에 action('selectRecord_견적', {code})를
+ * 보낸다. 부모가 견적 팝업(비모달, 화면 오른쪽)을 띄우거나, 이미 떠 있으면 그 팝업에
+ * 이 행을 보여준다. 이 페이지만 따로 열었으면 아무것도 안 한다.
+ */
+function openQuote(pcode) {
+    if (window.parent === window || typeof window.parent.action !== 'function') {
+        return;
+    }
+    window.parent.action('selectRecord_견적', { code: pcode }, window);
+}
+
+/**
+ * requery(pcode) — 다시 불러온다. pcode(t문의_견적산출.code)를 주면 다 불러온 뒤 그 행으로
+ * 커서를 옮긴다(selectRecord) — 견적 팝업에서 저장한 행이 보이게.
+ */
+function requery(pcode) {
     var grid = AGGrid.instance(<?= json_encode($gridId, JSON_UNESCAPED_UNICODE) ?>);
-    if (grid && grid.gridApi) {
+
+    if (!grid || !grid.gridApi) {
+        return;
+    }
+    return Promise.resolve(grid.requery()).then(function () {
+        if (pcode !== null && pcode !== undefined && String(pcode) !== '') {
+            selectRecord(pcode);
+        }
+    });
+}
+
+/** selectRecord(pcode) — 그리드의 커서를 t문의_견적산출.code가 pcode인 행에 맞춘다(그 행이 보이게 스크롤). */
+function selectRecord(pcode) {
+    var grid = AGGrid.instance(<?= json_encode($gridId, JSON_UNESCAPED_UNICODE) ?>);
+
+    if (!grid || !grid.gridApi) {
+        return;
+    }
+    grid.selectRow(pcode);
+}
+
+/**
+ * setParent(pcode) — 부모 문의 code를 바꾼다. 그리드의 fetch 주소(?code=)만 바꾸고 다시
+ * 불러온다(페이지는 다시 열지 않는다). AGGrid는 요청할 때마다 fetchUrl을 읽는다.
+ */
+function setParent(pcode) {
+    var grid = AGGrid.instance(<?= json_encode($gridId, JSON_UNESCAPED_UNICODE) ?>);
+
+    if (!grid) {
+        return;
+    }
+    grid.fetchUrl = grid.fetchUrl.split('?')[0] + '?code=' + encodeURIComponent(pcode);
+    if (grid.gridApi) {
         grid.requery();
     }
 }
 
 /** action(pcmd, pparams, psender) — 부모(inquiryContent_entry / index)가 부르는 창구. */
 function action(pcmd, pparams, psender) {
+    if (!pparams) {
+        pparams = {};
+    }
     switch (pcmd) {
+        case 'setParent':
+            return setParent(pparams.code);
         case 'requery':
-            return requery();
+            return requery(pparams.code);
+        case 'selectRecord':
+            return selectRecord(pparams.code);
         default:
             console.warn('견적.action: 알 수 없는 pcmd - ' + pcmd);
     }
 }
 
-// 버튼 — 동작은 다음 단계에서 붙인다(지금은 안내만).
-document.querySelectorAll('.ic-buttons button').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-        alert(btn.textContent.replace(/^\+\s*/, '') + ' — 준비 중입니다.');
-    });
-});
+/**
+ * 신규추가 — 이 탭을 품은 문의확인 화면에 action('addnew_견적')을 보낸다
+ * (부모가 견적 팝업을 신규로 띄운다). 이 페이지만 따로 열었으면 아무것도 안 한다.
+ */
+function addNew() {
+    if (window.parent === window || typeof window.parent.action !== 'function') {
+        return;
+    }
+    window.parent.action('addnew_견적', {}, window);
+}
+
+document.getElementById('ic-new').addEventListener('click', addNew);
 </script>
 </body>
 </html>

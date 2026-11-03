@@ -66,7 +66,17 @@
 class CrudButtons {
     /**
      * @param {{containerId: string, fetchUrl: string, pk?: (string|number|null),
-     *   target?: Window}} poptions target 생략 시 window.parent(부모 폼).
+     *   target?: Window, showClose?: boolean}} poptions target 생략 시 window.parent(부모 폼).
+     *   showClose: 창닫기 버튼을 보일지 — 기본 true. false면 버튼만 숨긴다
+     *   (바깥에서 action('close')로 닫는 길은 그대로 있다).
+     *   keepOnClear: 신규입력(clear) 때 비우지 않고 값을 남길 필드 이름 배열 — 기본 [].
+     *   예: ['parentcode'] — 같은 부모의 새 행을 이어서 입력할 때. PK는 넣어도 무시한다
+     *   (PK가 남으면 신규가 아니라 수정이 되므로).
+     *   confirmOnClose: 창닫기 때 저장 안 한 값이 있으면 물을지 — 기본 true. false면 묻지 않고
+     *   닫는다(입력 중이던 값은 버려진다). beforeCrudClose는 그대로 불린다.
+     *   requiredFields: 필수입력 필드 이름 배열 — 기본 []. 저장할 때 하나라도 비어 있으면
+     *   저장하지 않고 "필드: 값을 입력해야 합니다."를 보이며 첫 빈 칸으로 커서를 옮긴다.
+     *   순서: 스키마 검사(CrudJs) → 필수입력(이것) → isEnableAmdSave → beforeCrudSave.
      */
     constructor(poptions) {
         if (!poptions) {
@@ -90,6 +100,35 @@ class CrudButtons {
             this.target = poptions.target;
         } else {
             this.target = window.parent;
+        }
+
+        // 창닫기 버튼을 보일지 — false라고 준 때만 숨긴다(기본은 보인다).
+        if (poptions.showClose === false) {
+            this.showClose = false;
+        } else {
+            this.showClose = true;
+        }
+
+        // 창닫기 때 저장 안 한 값을 물을지 — false라고 준 때만 묻지 않는다(기본은 묻는다).
+        if (poptions.confirmOnClose === false) {
+            this.confirmOnClose = false;
+        } else {
+            this.confirmOnClose = true;
+        }
+
+        // 신규입력(clear) 때 값을 남길 필드 — 배열로 준 때만.
+        if (Array.isArray(poptions.keepOnClear)) {
+            this.keepOnClear = poptions.keepOnClear;
+        } else {
+            this.keepOnClear = [];
+        }
+        this.keptValues = null; // clear 직전에 담아 둔 남길 값 {필드: 값}
+
+        // 필수입력 필드 — 배열로 준 때만.
+        if (Array.isArray(poptions.requiredFields)) {
+            this.requiredFields = poptions.requiredFields;
+        } else {
+            this.requiredFields = [];
         }
 
         this.container = document.getElementById(poptions.containerId);
@@ -285,6 +324,37 @@ class CrudButtons {
             this.buttons.save.classList.remove('cb-dirty');
             this.buttons.save.title = '';
         }
+
+        this.applyPkBackground();
+    }
+
+    /**
+     * 입력폼 바탕색 규칙 — PK가 없으면(신규) 흰색, 있으면 입력폼 원래 색(보통 회색).
+     * amd 문서의 body에 'cb-no-pk' 클래스를 붙이거나 뗀다. 흰색 규칙(style)은 처음 한 번
+     * amd 문서에 넣는다 — amd는 아무것도 안 해도 된다. 바탕색을 변수로 쓰는 화면은
+     * body.cb-no-pk에 자기 변수를 바꾸면 된다(예: 문의확인의 --ic-bg).
+     * refresh() 끝에서 부르므로 열기/비우기/저장/삭제 뒤마다 맞춰진다.
+     */
+    applyPkBackground() {
+        var doc = this.target.document;
+        var style;
+
+        if (!doc || !doc.body) {
+            return;
+        }
+        if (doc.getElementById('cb-pk-style') === null && doc.head) {
+            style = doc.createElement('style');
+            style.id = 'cb-pk-style';
+            style.textContent = 'body.cb-no-pk { background-color: #ffffff !important; }';
+            doc.head.appendChild(style);
+        }
+
+        // CrudJs가 준비되기 전(아직 무엇을 열지 모름)에는 원래 색 그대로 둔다.
+        if (this.crud !== null && this.getPk() === null) {
+            doc.body.classList.add('cb-no-pk');
+        } else {
+            doc.body.classList.remove('cb-no-pk');
+        }
     }
 
     // ==================================================================
@@ -382,7 +452,8 @@ class CrudButtons {
             return;
         }
 
-        if (!this.confirmDiscard('닫을까요?')) {
+        // 저장 안 한 값이 있으면 묻는다 — confirmOnClose가 false면 묻지 않고 닫는다.
+        if (this.confirmOnClose && !this.confirmDiscard('닫을까요?')) {
             return;
         }
 
@@ -480,8 +551,12 @@ class CrudButtons {
         this.messageEl.className = 'cb-message';
         bar.appendChild(this.messageEl);
 
-        // 오른쪽 끝: 창닫기
+        // 오른쪽 끝: 창닫기 — showClose가 false면 숨긴다(입력폼을 감싼 화면이 따로 닫는 경우,
+        // 예: index 탭 자체인 문의확인 — 탭의 X로 닫는다).
         this.buttons.close = this.makeButton(bar, 'close', '\u{1F6AA} 창닫기');
+        if (this.showClose === false) {
+            this.buttons.close.hidden = true;
+        }
 
         // 창닫기 말고는 CrudJs가 준비될 때까지 막아 둔다(refresh()가 풀어준다).
         this.buttons.save.disabled = true;
@@ -553,7 +628,8 @@ class CrudButtons {
         var self = this;
         var crud = this.crud;
 
-        // 저장
+        // 저장 — 필수입력 검사는 CrudJs의 validate 자리(스키마 검사 다음, save_before 앞)에 단다.
+        crud.validate = function () { return self.checkRequired(); };
         crud.save_before = function () { return self.askParent('isEnableAmdSave', 'beforeCrudSave'); };
         crud.save_after = function () { self.callParent('afterCrudSave', {}); };
 
@@ -561,13 +637,101 @@ class CrudButtons {
         crud.delete_before = function () { return self.askParent('isEnableAmdDelete', 'beforeCrudDelete'); };
         crud.delete_after = function () { self.callParent('afterCrudDelete', {}); };
 
-        // 신규입력(폼 비우기) — 허용여부 함수는 없다.
-        crud.clear_before = function () { return self.askParent(null, 'beforeCrudClear'); };
-        crud.clear_after = function () { self.callParent('afterCrudClear', {}); };
+        // 신규입력(폼 비우기) — 허용여부 함수는 없다. keepOnClear 필드는 비우기 직전에 담아
+        // 두었다가 비운 직후(afterCrudClear보다 먼저) 되돌려 넣는다 — amd의 afterCrudClear와
+        // 기준값(rememberValues)이 남긴 값을 본다.
+        crud.clear_before = async function () {
+            var ok = await self.askParent(null, 'beforeCrudClear');
+
+            if (ok) {
+                self.captureKept();
+            }
+            return ok;
+        };
+        crud.clear_after = function () {
+            self.restoreKept();
+            self.callParent('afterCrudClear', {});
+        };
 
         // 조회 — 허용여부 함수는 없다.
         crud.selectRecord_before = function () { return self.askParent(null, 'beforeCrudSelectRecord'); };
         crud.selectRecord_after = function () { self.callParent('afterCrudSelectRecord', {}); };
+    }
+
+    /**
+     * 필수입력 검사 — requiredFields 중 비어 있는(앞뒤 공백만 있는 것 포함) 필드가 있으면
+     * false. 이유("모델명, 품목코드: 값을 입력해야 합니다.")는 CrudJs가 버튼 옆에
+     * "저장 실패: …"로 보이고, 첫 빈 칸으로 커서를 옮긴다. 스키마에 없는 필드는 건너뛴다.
+     */
+    checkRequired() {
+        var schemaFields = this.crud.schema.fields;
+        var empty = [];
+        var name;
+        var value;
+        var el;
+        var i;
+
+        for (i = 0; i < this.requiredFields.length; i++) {
+            name = this.requiredFields[i];
+            if (!schemaFields || !schemaFields[name]) {
+                console.warn('crudbuttons: 필수입력 필드(' + name + ')가 스키마에 없습니다 — 건너뜁니다.');
+                continue;
+            }
+            value = this.crud.getValue(name);
+            if (value === null || value === undefined || String(value).trim() === '') {
+                empty.push(name);
+            }
+        }
+
+        if (empty.length === 0) {
+            return true;
+        }
+
+        this.crud._validationMessage = empty.join(', ') + ': 값을 입력해야 합니다.';
+        el = this.target.document.getElementById(empty[0]);
+        if (el !== null && typeof el.focus === 'function') {
+            el.focus();
+        }
+        return false;
+    }
+
+    /**
+     * 신규입력(clear) 직전 — keepOnClear 필드의 지금 값을 담아 둔다.
+     * 스키마에 없는 필드와 PK는 건너뛴다(PK가 남으면 신규가 아니라 수정이 된다).
+     */
+    captureKept() {
+        var schemaFields = this.crud.schema.fields;
+        var pkField = this.crud.schema.primaryKey;
+        var name;
+        var i;
+
+        this.keptValues = {};
+        for (i = 0; i < this.keepOnClear.length; i++) {
+            name = this.keepOnClear[i];
+            if (name === pkField) {
+                console.warn('crudbuttons: PK(' + name + ')는 keepOnClear에 넣을 수 없습니다 — 무시합니다.');
+                continue;
+            }
+            if (!schemaFields || !schemaFields[name]) {
+                continue;
+            }
+            this.keptValues[name] = this.crud.getValue(name);
+        }
+    }
+
+    /** 신규입력(clear) 직후 — 담아 둔 keepOnClear 값을 되돌려 넣는다. */
+    restoreKept() {
+        var names;
+        var i;
+
+        if (this.keptValues === null) {
+            return;
+        }
+        names = Object.keys(this.keptValues);
+        for (i = 0; i < names.length; i++) {
+            this.crud.setValue(names[i], this.keptValues[names[i]]);
+        }
+        this.keptValues = null;
     }
 
     /**

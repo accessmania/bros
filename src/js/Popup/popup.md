@@ -79,6 +79,7 @@ new Popup({
     position: 'center',             // 'center'(기본) | { top, left }
     animation: 'small',             // 'none'(기본) | 'small' | 'large'
     closeOnOverlayClick: true,      // 기본 true(modal일 때만 의미)
+    bodyPadding: 8,                 // 선택 — 테두리와 내용(html/iframe) 사이 여백. 생략하면 16px, 숫자면 px
     html: '<label>메모 <input id="mp-input"></label>' +
           '<button onclick="' +
               "Popup.instance('my-popup').action('save', " +
@@ -100,6 +101,9 @@ new Popup({
 - `setCaption(text)` — 이미 열려 있는 팝업의 캡션(제목)을 바꾼다(헤더
   없는 팝업은 무시)
 - `close()` — DOM 제거 + `onClose(id)` 호출 + `Popup.instances`에서 제거
+- `bringToFront()` — 이 팝업을 다른 팝업들보다 앞으로(이미 맨 앞이면 무시).
+  팝업 여러 개가 겹쳤을 때 아래 팝업의 어디를 눌러도(머리줄, iframe 안 문서,
+  그 안의 iframe — 예: crudbuttons 버튼줄) 자동으로 불린다. 같은 출처 iframe만 해당.
 - `Popup.instance(id)` — 정적 메서드, 등록된 인스턴스를 id로 조회
   (`AGGrid.instance(gridId)`/`Calendar.instance(id)`와 동일 패턴)
 - `Popup.senderFor(win)` — 정적 메서드, iframe 안 문서의 `window`로

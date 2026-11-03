@@ -127,9 +127,11 @@ class Popup {
      *   title?: string, modal?: boolean,
      *   draggable?: boolean, position?: ('center'|{top: (number|string), left: (number|string)}),
      *   animation?: ('none'|'small'|'large'),
-     *   closeOnOverlayClick?: boolean,
+     *   closeOnOverlayClick?: boolean, bodyPadding?: (number|string),
      *   onAction?: (ptype: string, payload: object, id: string) => void,
      *   onClose?: (id: string) => void}} options html/iframeUrl 중 하나는 필수.
+     *   bodyPadding: 팝업 테두리와 내용(html/iframe) 사이 여백 — 생략하면 CSS 기본(16px).
+     *   숫자면 px.
      */
     constructor(options) {
         options = options || {};
@@ -152,6 +154,8 @@ class Popup {
         this._iframeUrl = hasIframeUrl ? options.iframeUrl : null;
         this._iframeWidth = options.iframeWidth !== undefined ? options.iframeWidth : 480;
         this._iframeHeight = options.iframeHeight !== undefined ? options.iframeHeight : 360;
+        // [2026-11-02 추가] 테두리와 내용 사이 여백 — null이면 CSS 기본(.wc-popup-body의 16px).
+        this._bodyPadding = options.bodyPadding !== undefined ? options.bodyPadding : null;
 
         Popup.instances[this.id] = this;
 
@@ -245,7 +249,12 @@ class Popup {
         } else {
             bodyInnerHtml = this._html;
         }
-        animHtml += '<div class="wc-popup-body">' + bodyInnerHtml + '</div>';
+        let bodyStyle = '';
+        if (this._bodyPadding !== null) {
+            const pad = typeof this._bodyPadding === 'number' ? this._bodyPadding + 'px' : String(this._bodyPadding);
+            bodyStyle = ' style="padding:' + Popup._escape(pad) + ';"';
+        }
+        animHtml += '<div class="wc-popup-body"' + bodyStyle + '>' + bodyInnerHtml + '</div>';
         // animation:'none'(기본)이면 추가 클래스가 없어 .wc-popup-anim에
         // 아무 @keyframes도 안 걸린다 — 'small'/'large'만 각각의 클래스로
         // 자기 keyframes를 켠다(_injectStyles() 참고).
@@ -308,6 +317,56 @@ class Popup {
         if (this.draggable && hasHeader) {
             this._initDrag(box.querySelector('[data-popup-drag]'), box);
         }
+
+        // [2026-11-03 추가] 팝업 여러 개가 겹쳤을 때 아래 깔린 팝업을 누르면 맨 앞으로 —
+        // 박스(머리줄/테두리)를 누를 때, 그리고 iframe 안 문서를 누를 때(iframe 안의 클릭은
+        // 바깥 문서로 오지 않으므로 _watchFrame()이 iframe 문서에 직접 건다).
+        box.addEventListener('pointerdown', () => this.bringToFront(), true);
+        if (this.iframeEl) {
+            this._watchFrame(this.iframeEl);
+        }
+    }
+
+    /**
+     * 이 팝업을 다른 팝업들보다 앞으로 가져온다 — 이미 맨 앞이면 아무것도 안 한다.
+     * 오버레이/위치 래퍼가 있으면 그것도 같이 올린다(_buildDom()의 z-index 한 쌍과 같은 규칙).
+     */
+    bringToFront() {
+        if (!this.boxEl) {
+            return;
+        }
+        if (Number(this.boxEl.style.zIndex) === Popup._zIndexSeq + 1) {
+            return;
+        }
+        const zIndex = Popup._nextZIndex();
+        if (this.overlayEl) {
+            this.overlayEl.style.zIndex = String(zIndex);
+        }
+        this.boxEl.style.zIndex = String(zIndex + 1);
+    }
+
+    /**
+     * iframe(frameEl) 안 문서를 누르면 이 팝업을 앞으로 가져오게 한다. iframe이 새 문서를
+     * 불러올 때마다(load) 다시 걸고, 그 문서 안의 iframe(예: crudbuttons 버튼줄)에도 똑같이
+     * 건다. 다른 출처 문서는 접근할 수 없으니 건너뛴다.
+     */
+    _watchFrame(frameEl) {
+        const hook = () => {
+            let doc = null;
+            try {
+                doc = frameEl.contentDocument;
+            } catch (err) {
+                doc = null;
+            }
+            if (!doc || doc.__wcPopupFrontHooked) {
+                return;
+            }
+            doc.__wcPopupFrontHooked = true;
+            doc.addEventListener('pointerdown', () => this.bringToFront(), true);
+            doc.querySelectorAll('iframe').forEach((child) => this._watchFrame(child));
+        };
+        frameEl.addEventListener('load', hook);
+        hook();
     }
 
     /**

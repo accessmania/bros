@@ -409,7 +409,9 @@ class CrudJs {
         }
 
         var meta = field ? (this.schema.fields || {})[field] : null;
-        if (meta && this._isNumericType(meta.type)) {
+        // [2026-11-02 수정] 번호(PK, 이름이 code로 끝나는 필드)는 숫자형이라도 콤마를
+        // 붙이지 않는다(_isIdentifierField) — 'code 12,345'가 아니라 'code 12345'.
+        if (meta && this._isNumericType(meta.type) && !this._isIdentifierField(field, meta)) {
             displayValue = this._formatNumberForDisplay(displayValue);
         }
         // [2026-10-28 추가] 날짜/시각 필드는 'YYYY-MM-DD'(시각 있으면 ' HH:MM')로 보인다.
@@ -967,6 +969,27 @@ class CrudJs {
             }
         }
         return false;
+    }
+
+    /**
+     * [2026-11-02 신설] 번호(식별자) 필드인지 — 숫자형이라도 천단위 콤마를 붙이지
+     * 않는다(_writeValueToEl). 번호로 보는 것:
+     * - PK(스키마의 isPrimaryKey, 또는 schema.primaryKey와 같은 이름)
+     * - 이름이 'code'로 끝나는 필드(대소문자 무시) — parentcode, 고객사code 같은 외래키.
+     *   하위폼 그리드가 code 열에 콤마를 안 붙이는 규칙(/code$/i)과 같다.
+     * 읽을 때(_readValueFromEl)는 원래대로 콤마를 떼므로 저장 값에는 영향이 없다.
+     * @param {string} field
+     * @param {object} [meta] 스키마의 그 필드 정보
+     * @returns {boolean}
+     */
+    _isIdentifierField(field, meta) {
+        if (meta && meta.isPrimaryKey === true) {
+            return true;
+        }
+        if (field && field === this.schema.primaryKey) {
+            return true;
+        }
+        return /code$/i.test(String(field || ''));
     }
 
     /**

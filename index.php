@@ -334,6 +334,8 @@ function amaniaShell() {
         case 'setContent':
         case 'closeTab':
         case 'closeAllTabs':
+        case 'setTabTitle':
+        case 'tabReady':
           return this.action_tab(pcmd, pparams, psender);
         case 'leftMenuHide':
         case 'leftMenuShow':
@@ -345,6 +347,8 @@ function amaniaShell() {
         case 'setbank':
         case 'getbank':
           return this.action_bank(pcmd, pparams, psender);
+        case 'amdReport':
+          return this.action_report(pcmd, pparams, psender);
         default:
           // 저장소(variableBank) 관련 pcmd는 전부 variableBank.js가 처리한다.
           if (VariableBank.handles(pcmd)) {
@@ -364,6 +368,30 @@ function amaniaShell() {
         case 'getbank':
           return getbank(pparams.pnickname, pparams.pattname);
       }
+    },
+
+    // ── "보고" 그룹 — 탭에 바로 뜬 입력폼(amd)의 crudbuttons 보고 ──
+    // pparams: { ptype, payload, popupId }, psender: 보고한 amd 창(탭 iframe의 contentWindow).
+    // crudbuttons는 amd가 iframe 안이면 창닫기 때 'closed'를 보고만 한다(닫기는 띄운 쪽 몫)
+    // — 셸이 띄운 쪽이므로 그 amd가 들어 있는 탭을 닫는다. 나머지 ptype은 셸이 할 일이 없다.
+    action_report(pcmd, pparams, psender) {
+      pparams = pparams || {};
+      switch (pparams.ptype) {
+        case 'closed':
+          return this._closeTabOfWindow(psender);
+      }
+    },
+    /** 창(탭 iframe의 contentWindow)이 들어 있는 탭을 닫는다. 셸의 탭이 아니면 아무것도 안 한다. */
+    _closeTabOfWindow(pwin) {
+      let frame = null;
+      try {
+        frame = pwin ? pwin.frameElement : null;
+      } catch (e) {
+        frame = null;
+      }
+      const tabId = frame ? frame.getAttribute('data-tab-iframe') : null;
+      if (!tabId) return;
+      return this._closeTab({ id: tabId });
     },
 
     // ── "메뉴" 그룹 — 메뉴 주입 + 좌측 메뉴 선택 ──
@@ -440,7 +468,8 @@ function amaniaShell() {
       } else {
         src = this._buildDemoSrc(title);
       }
-      this.tabs.push({ id, title, src, category: categoryName, group: categoryGroup, autoHideMenu });
+      // loading: 새 탭은 다 그려질 때까지 숨겨 둔다(_onTabFrameLoad / _tabReady).
+      this.tabs.push({ id, title, src, category: categoryName, group: categoryGroup, autoHideMenu, loading: true });
       this.activeTab = id;
       if (autoHideMenu) {
         this.tabMenuShow();
@@ -517,7 +546,84 @@ function amaniaShell() {
           return this._closeTab(pparams);
         case 'closeAllTabs':
           return this._closeAllTabs();
+        case 'setTabTitle':
+          return this._setTabTitle(pparams);
+        case 'tabReady':
+          return this._tabReady(psender);
       }
+    },
+
+    /**
+     * 새 탭 숨김 규칙 — 새로 연 탭만 해당한다(탭 전환, 같은 탭 재사용, 주소 변경은 해당 없음).
+     * 새 탭은 loading: true로 만들어져 iframe이 visibility:hidden인 채로 그려지고
+     * (배치는 그대로 계산되므로 그리드 크기 등이 맞는다), 위에 "불러오는 중..."이 보인다.
+     * 보이는 때:
+     *  - 화면이 다 그린 뒤 action('tabReady')를 보내면 → 바로(_tabReady).
+     *  - 화면이 tabReady를 보내지 않는 화면이면(window.TAB_READY_MANUAL이 true가 아니면)
+     *    → iframe load 때(_onTabFrameLoad). 기존 화면은 손대지 않아도 이렇게 보인다.
+     *  - TAB_READY_MANUAL 화면인데 tabReady가 오지 않으면 → load 뒤 tabReadyTimeoutMs가 지나면.
+     */
+    tabReadyTimeoutMs: 5000,
+    _onTabFrameLoad(tab, el) {
+      // 탭 페이지에 지금 테마를 알린다(원래 @load에 있던 것).
+      try {
+        el.contentWindow.postMessage({ type: 'wave-theme', theme: this.theme }, '*');
+      } catch (e) {
+        // 접근할 수 없으면 넘어간다.
+      }
+      if (!tab || !tab.loading) return;
+      let manual = false;
+      try {
+        manual = !!(el.contentWindow && el.contentWindow.TAB_READY_MANUAL === true);
+      } catch (e) {
+        manual = false;
+      }
+      if (!manual) {
+        this._showTab(tab.id);
+        return;
+      }
+      setTimeout(() => this._showTab(tab.id), this.tabReadyTimeoutMs);
+    },
+    /** tabReady — 보낸 창(psender)이 들어 있는 탭을 보이게 한다. */
+    _tabReady(psender) {
+      let frame = null;
+      try {
+        frame = psender ? psender.frameElement : null;
+      } catch (e) {
+        frame = null;
+      }
+      const tabId = frame ? frame.getAttribute('data-tab-iframe') : null;
+      if (!tabId) return;
+      this._showTab(tabId);
+    },
+    _showTab(id) {
+      const tab = this.tabs.find(t => t.id === id);
+      if (tab && tab.loading) {
+        tab.loading = false;
+      }
+    },
+    /**
+     * setTabTitle — 탭 iframe을 다시 불러오지 않고 제목만 바꾼다. 화면이 떠 있는 채로
+     * 다른 레코드로 바꿔 보여줄 때 쓴다(예: 문의확인이 떠 있을 때 목록에서 다른 문의를
+     * 더블클릭 — setContent로 주소를 바꾸면 iframe 전체를 다시 불러오므로).
+     * pparams: { id: 탭 id(data-tab-iframe), title, activate: true면 그 탭으로 옮긴다 }.
+     * 옮길 때 requery는 부르지 않는다 — 부른 화면이 방금 스스로 새 값을 읽었기 때문이다.
+     * tab.src는 그대로 둔다(바꾸면 iframe이 다시 불러와진다).
+     */
+    _setTabTitle(pparams) {
+      pparams = pparams || {};
+      const tab = this.tabs.find(t => t.id === pparams.id);
+      if (!tab) return null;
+      const title = pparams.title == null ? '' : String(pparams.title).trim();
+      if (title !== '') {
+        tab.title = title;
+      }
+      if (pparams.activate === true) {
+        this.activeTab = tab.id;
+        this.syncCategory(tab.title);
+        this._scheduleTabMenuAutoHide();
+      }
+      return tab.id;
     },
     _selectTabMenu(pparams) {
       this.activeTab = pparams.id;
@@ -576,7 +682,8 @@ function amaniaShell() {
       }
       const id = 't' + Date.now() + Math.random().toString(36).slice(2, 6);
       // offMenu — menu.js에 없는 화면(setContent로 연 탭). 탭바가 cyan 색으로 구분해 그린다.
-      this.tabs.push({ id, key, title, src, category, group, autoHideMenu: false, offMenu: true });
+      // loading: 새 탭은 다 그려질 때까지 숨겨 둔다(_onTabFrameLoad / _tabReady).
+      this.tabs.push({ id, key, title, src, category, group, autoHideMenu: false, offMenu: true, loading: true });
       this.activeTab = id;
       this._scheduleTabMenuAutoHide();
       return id;
@@ -996,11 +1103,14 @@ function amaniaShell() {
              찾기 위한 앵커. -->
         <template x-for="tab in tabs" :key="tab.id">
           <div x-show="activeTab === tab.id" x-cloak class="absolute inset-0">
+            <!-- 새 탭은 다 그려질 때까지 숨긴다(tab.loading — _onTabFrameLoad / _tabReady 참고). -->
             <iframe :src="tab.src"
                     :data-tab-iframe="tab.id"
                     :data-tab-title="tab.title"
-                    @load="try { $el.contentWindow.postMessage({ type: 'wave-theme', theme: theme }, '*') } catch (e) {}"
+                    :style="tab.loading ? 'visibility: hidden' : ''"
+                    @load="_onTabFrameLoad(tab, $el)"
                     class="w-full h-full border-0 block" title="tab-frame"></iframe>
+            <div x-show="tab.loading" class="absolute inset-0 flex items-center justify-center text-sm text-gray-400 dark:text-gray-500 pointer-events-none">불러오는 중...</div>
           </div>
         </template>
 

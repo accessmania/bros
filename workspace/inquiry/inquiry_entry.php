@@ -293,36 +293,58 @@ function requery() {
 var inquiryCurrentRecord = null;
 
 /**
- * 문의확인 화면(inquiryContent_entry.php)은 index 탭 하나(탭키 "문의확인")를
- * 돌려쓴다 — setContent(주소, 제목, 탭키)는 같은 탭키의 탭이 있으면 새로 만들지
- * 않고 그 탭의 주소와 제목만 바꾼다. 제목은 "문의 (code)" / "문의 (new)".
- * 그 탭 입력폼에 저장 안 한 값이 있으면 바꾸기 전에 묻는다(취소하면 false).
- * index 밖에서 열었으면 이 창을 그 화면으로 바꾼다.
+ * 문의확인 화면(inquiryContent_entry.php)은 index 탭 하나(탭키 "문의확인")를 쓰고,
+ * 한 번 뜬 화면은 다시 열지 않는다:
+ *  - 이미 떠 있으면 그 화면에 action('openInquiry', {code})를 보낸다 — 화면이 입력폼/
+ *    하위폼/talk을 그대로 두고 code만 바꾸고, 이 탭에서 그 탭으로 옮긴다. 저장 안 한
+ *    값이 있으면 그 화면(crudbuttons)이 묻는다.
+ *  - 떠 있지 않으면(또는 아직 준비 전이라 'unsupported'면) setContent로 처음 연다.
+ * pcode는 문의 code 또는 'new'. index 밖에서 열었으면 이 창을 그 화면으로 바꾼다.
  */
 var INQUIRY_CONTENT_TAB = '문의확인';
 
 function openInquiryContent(pcode) {
     var url = 'workspace/inquiry/inquiryContent_entry.php?code=' + encodeURIComponent(pcode);
+    var title = '문의 (' + pcode + ')';
     var shell = window.parent;
+    var win;
+
     if (shell === window || typeof shell.setContent !== 'function') {
         location.href = 'inquiryContent_entry.php?code=' + encodeURIComponent(pcode);
         return true;
     }
-    // 이미 열린 문의확인 탭(IC_CODE를 가진 iframe)에 저장 안 한 값이 있는지 본다.
-    var frames = shell.document.querySelectorAll('iframe[data-tab-iframe]');
-    for (var i = 0; i < frames.length; i++) {
+
+    win = findInquiryContentWindow(shell);
+    if (win === null) {
+        shell.setContent(url, title, INQUIRY_CONTENT_TAB);
+        return true;
+    }
+
+    Promise.resolve(win.action('openInquiry', { code: pcode }, window)).then(function (presult) {
+        if (presult === 'unsupported') {
+            shell.setContent(url, title, INQUIRY_CONTENT_TAB);
+        }
+    });
+    return true;
+}
+
+/** 셸에 떠 있는 문의확인 화면의 창(IC_TAB_KEY가 "문의확인"이고 action이 있는 탭 iframe). 없으면 null. */
+function findInquiryContentWindow(pshell) {
+    var frames = pshell.document.querySelectorAll('iframe[data-tab-iframe]');
+    var win;
+    var i;
+
+    for (i = 0; i < frames.length; i++) {
         try {
-            var win = frames[i].contentWindow;
-            if (win && typeof win.icFormDirty === 'function' && win.icFormDirty()
-                && !confirm('문의확인 화면에 저장하지 않은 내용이 있습니다. 버리고 다른 문의를 열까요?')) {
-                return false;
+            win = frames[i].contentWindow;
+            if (win && win.IC_TAB_KEY === INQUIRY_CONTENT_TAB && typeof win.action === 'function') {
+                return win;
             }
         } catch (e) {
             // 다른 출처 iframe 등은 넘어간다.
         }
     }
-    shell.setContent(url, '문의 (' + pcode + ')', INQUIRY_CONTENT_TAB);
-    return true;
+    return null;
 }
 
 /**
@@ -353,9 +375,9 @@ function selectRecord(pcode) {
 }
 
 /**
- * 신규추가 — 문의확인 화면을 신규(code=new)로 "문의확인" 탭에 연다. 입력폼/탭/
- * talk이 모두 빈 칸이고, 거기서 저장하면 t문의에 insert된 뒤 같은 탭이 새 code로
- * 다시 열린다(inquiryContent_entry.php의 icOpenSaved).
+ * 신규추가 — 문의확인 화면을 신규(code=new)로 "문의확인" 탭에 연다(떠 있으면 그 화면을
+ * 신규로 바꾼다). 입력폼은 빈 칸이고 하위폼/talk은 숨는다. 거기서 저장하면 t문의에
+ * insert된 뒤 같은 화면이 새 code로 바뀐다(inquiryContent_entry.php의 afterCrudSave).
  */
 function addNew() {
     openInquiryContent('new');
