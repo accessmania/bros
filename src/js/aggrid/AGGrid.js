@@ -95,6 +95,21 @@ class AGGrid {
         // 요청대로 기본은 읽기전용(view) — 편집은 툴바 버튼으로 명시적으로 켠다.
         this.mode = options.defaultMode === 'edit' ? 'edit' : 'view';
         this.showGoToTool = options.showGoToTool === true;
+        // [2026-11-05 추가] 그리드 모양 — 'basic'(기본형, 기본값) | 'table'(테이블형).
+        // 동작은 같고 모양만 다르다. 생성 시 한 번만 정한다(aggrid.md "그리드
+        // 스타일" 참고 — AG Grid가 행 높이를 처음 그릴 때만 읽기 때문).
+        this.gridStyle = options.gridStyle === 'table' ? 'table' : 'basic';
+        // [2026-11-05 추가] 맨 앞 순번(No) 컬럼 — 기본은 표시. 끄면 dirty 행의
+        // 연필(✏️) 표시도 같이 없어진다(호박색 강조, 저장 버튼 깜빡임은 그대로).
+        // [2026-11-05 추가] 마우스를 올린 행의 색. 안 주면 스타일 기본 음영 그대로.
+        this.rowHoverColor = typeof options.rowHoverColor === 'string' ? options.rowHoverColor : null;
+        // [2026-11-05 추가] 행 위에서 마우스 포인터를 손가락 모양으로. 기본은 끔.
+        this.rowHoverPointer = options.rowHoverPointer === true;
+        this.showRowNumber = options.showRowNumber !== false;
+        // [2026-11-05 추가] 행선택기 — Access의 레코드 선택기처럼 숫자 없이 현재
+        // 행(▶)과 편집 중인 행(✏️)만 보여준다. 켜면 순번(No) 컬럼 자리를 대신한다
+        // (showRowNumber 값과 무관). aggrid.md "행선택기" 참고.
+        this.showRowSelector = options.showRowSelector === true;
         // [2026-10-20 추가] "편집을 취소했습니다."/"저장 완료" 같은 안내
         // 문구는 기본형에서 안 보인다 — 필요한 화면만 true로 켠다. 실패/
         // 오류 문구는 이 옵션과 무관하게 항상 보인다(_setInfoStatus 참고).
@@ -226,9 +241,14 @@ class AGGrid {
         // 초기 높이는 고정값으로 우선 잡아둔다 — autoFitBottomGap이 있으면
         // 아래 _fitHeight()가 실제 레이아웃(툴바 높이 포함)을 반영해 바로
         // 다시 계산해 덮어쓴다.
+        const gridStyleClass = this.gridStyle === 'table' ? ' ag-shell-grid-table' : '';
+        const rowSelectorClass = this.showRowSelector ? ' ag-shell-grid-rowselector' : '';
+        const rowHoverClass = this.rowHoverColor !== null ? ' ag-shell-grid-rowhover' : '';
+        const rowPointerClass = this.rowHoverPointer ? ' ag-shell-grid-rowpointer' : '';
+        const hoverColorStyle = this.rowHoverColor !== null ? ';--ag-shell-row-hover-color:' + this._escape(this.rowHoverColor) : '';
         this.containerEl.innerHTML =
             '<div id="' + this.toolbarId + '" class="ag-shell-toolbar"></div>' +
-            '<div id="' + this.gridDivId + '" class="ag-theme-alpine ag-shell-grid" style="height:' + this._escape(this.height) + '"></div>';
+            '<div id="' + this.gridDivId + '" class="ag-theme-alpine ag-shell-grid' + gridStyleClass + rowSelectorClass + rowHoverClass + rowPointerClass + '" style="height:' + this._escape(this.height) + hoverColorStyle + '"></div>';
 
         this._renderToolbar();
         this.gridApi = agGrid.createGrid(document.getElementById(this.gridDivId), this._buildGridOptions());
@@ -512,12 +532,16 @@ class AGGrid {
      */
     _buildColumnDefs() {
         const noColumn = {
-            headerName: 'No', width: 50, minWidth: 50, pinned: 'left',
+            headerName: this.showRowSelector ? '' : 'No',
+            width: this.showRowSelector ? 36 : 50,
+            minWidth: this.showRowSelector ? 36 : 50,
+            resizable: !this.showRowSelector,
+            pinned: 'left',
             sortable: false, filter: false, editable: false,
             // bestfit(autoSizeAllColumns, 2026-08-26 기본값 변경)이 이
             // 고정 폭 컬럼까지 내용 기준으로 넓히지 않도록 제외한다.
             suppressAutoSize: true,
-            cellClass: 'ag-shell-rownum-cell',
+            cellClass: this.showRowSelector ? 'ag-shell-rownum-cell ag-shell-rowselector-cell' : 'ag-shell-rownum-cell',
             // dirty(편집했지만 저장 안 함)한 행은 순번 대신 연필(✏️)을
             // 보여준다 — "저장이 필요한 행"을 행 번호 열만 봐도 바로 알 수
             // 있게. 신규 행(상단 고정)은 항상 dirty로 취급.
@@ -528,6 +552,10 @@ class AGGrid {
                 const isDirty = params.node.rowPinned === 'top' || this._dirtyNodeIds.has(params.node.id);
                 if (isDirty) {
                     return '✏️';
+                }
+                if (this.showRowSelector) {
+                    // 행 클릭 시 _onCellClicked()가 이전/새 행을 다시 그려 ▶가 옮겨간다.
+                    return this._keyOf(params.data) === this.activeKey ? '▶' : '';
                 }
                 return params.node.rowIndex != null ? params.node.rowIndex + 1 : '';
             },
@@ -591,7 +619,8 @@ class AGGrid {
                     // justifyContent를 함께 강제한다.
                     wrapped.cellStyle = { textAlign: 'center', display: 'flex', justifyContent: 'center', alignItems: 'center' };
                 } else if (col.dataType === 'string') {
-                    wrapped.cellStyle = { textAlign: 'left' };
+                    // 테이블형은 글자를 가운데로(숫자는 두 스타일 모두 오른쪽).
+                    wrapped.cellStyle = { textAlign: this.gridStyle === 'table' ? 'center' : 'left' };
                 } else if (col.dataType === 'number') {
                     wrapped.cellStyle = { textAlign: 'right' };
                 } else {
@@ -611,7 +640,7 @@ class AGGrid {
             return wrapped;
         });
 
-        const columns = [noColumn].concat(dataColumns);
+        const columns = (this.showRowNumber || this.showRowSelector) ? [noColumn].concat(dataColumns) : dataColumns;
 
         if (this.mode === 'edit' && this.showDeleteColumn) {
             columns.push({
@@ -1325,6 +1354,64 @@ class AGGrid {
         background-color: #fafafa !important; color: #9ca3af; font-weight: 500; text-align: center;
     }
     .ag-shell-error { color: #c0392b; }
+    /* rowHoverColor — AG Grid의 --ag-row-hover-color만으로는 색이 나오지 않아, AG Grid가
+       마우스 올린 행에 붙이는 ag-row-hover 클래스를 보고 셀 배경을 직접 칠한다.
+       레이어 안에 두고 !important를 쓰는 이유: 행 번호·행선택기 칸의 배경도 레이어
+       안 !important라서, 같은 레이어에서 명시도로 이겨야 그 칸까지 칠해진다. */
+    .ag-shell-grid-rowhover .ag-row-hover .ag-cell {
+        background-color: var(--ag-shell-row-hover-color) !important;
+    }
+}
+
+/* 테이블형(gridStyle:'table') — 위 레이어 밖에 둔다. 레이어 안에 넣으면 레이어
+   없는 vendor CSS(ag-theme-alpine)에 져서 안 먹는다. 클래스 2개로 묶어
+   같은 div의 .ag-theme-alpine 변수 값을 이긴다. */
+.ag-shell-grid.ag-shell-grid-table {
+    --ag-font-family: 'Malgun Gothic', 'Segoe UI', sans-serif;
+    --ag-font-size: 12px;
+    --ag-row-height: 46px;
+    --ag-header-height: 48px;
+    --ag-header-background-color: #ffffff;
+    --ag-header-foreground-color: #555555;
+    --ag-odd-row-background-color: #ffffff;
+    --ag-row-hover-color: #f3f3f3;
+    --ag-border-color: #c8c8c8;
+    --ag-row-border-color: #c8c8c8;
+    --ag-cell-horizontal-padding: 6px;
+}
+.ag-shell-grid.ag-shell-grid-table .ag-cell,
+.ag-shell-grid.ag-shell-grid-table .ag-header-cell {
+    border-right: 1px solid #c8c8c8;
+}
+.ag-shell-grid.ag-shell-grid-table .ag-header-cell { font-weight: 400; }
+.ag-shell-grid.ag-shell-grid-table .ag-header-cell-label { justify-content: center; }
+.ag-shell-grid.ag-shell-grid-table .ag-header-cell-text {
+    white-space: normal; text-align: center; line-height: 1.25;
+}
+/* 행 번호 — 번호 뒤에 네모 그림을 깔아 네모 칸 안에 있는 것처럼 보인다. */
+.ag-shell-grid.ag-shell-grid-table .ag-shell-rownum-cell {
+    color: #888888; font-size: 11px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Crect x='.5' y='.5' width='19' height='19' rx='3' fill='%23fff' stroke='%23bbb'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: center;
+}
+/* 행선택기(showRowSelector) — 폭이 좁아 안쪽 여백을 없앤다. 테이블형의 네모 칸도
+   쓰지 않으므로 위 규칙보다 뒤에 둔다. */
+.ag-shell-grid .ag-cell.ag-shell-rowselector-cell {
+    padding: 0; text-align: center; font-size: 10px; color: #4b5563; background-image: none;
+}
+/* 행선택기 세로선을 제목과 본문에서 맞춘다. vendor는 고정 컬럼의 제목에만 바깥 묶음
+   (.ag-grid-container-wrapper)에 선을 긋고, 본문은 셀 자체에 긋는다. 묶음의 선을 없애고
+   제목 셀에 본문과 같은 선을 긋는다. */
+.ag-shell-grid-rowselector .ag-header-row .ag-grid-pinned-left-cells .ag-grid-container-wrapper {
+    border-right: none;
+}
+.ag-shell-grid-rowselector .ag-header-row .ag-grid-pinned-left-cells .ag-header-cell {
+    border-right: var(--ag-borders-critical) var(--ag-border-color);
+}
+/* rowHoverPointer — 데이터 행 위에서 손가락 모양 포인터 */
+.ag-shell-grid-rowpointer .ag-row:not(.ag-header-row),
+.ag-shell-grid-rowpointer .ag-row:not(.ag-header-row) .ag-cell {
+    cursor: pointer;
 }
 `;
         document.head.appendChild(style);

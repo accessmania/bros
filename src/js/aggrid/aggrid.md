@@ -118,6 +118,56 @@ UI 조정(툴바 색상/구분선/높이 등, `md/Board_ai.md` "AGGrid 툴바"�
   할 때는, 이 baseline(1_9)이 그 변경의 실제 검증 대상이 된다 — "1_9에서
   보이는 모습"이 곧 "이 모듈을 쓰는 모든 화면의 기본 모습"이라는 뜻이므로.
 
+## 그리드 스타일 — 기본형 / 테이블형
+
+그리드의 **모양**은 두 가지이고 생성자 옵션 `gridStyle`로 고른다(2026-11-05 추가).
+모양만 다르다 — 조회·저장·검색·편집 등 동작은 같다. 위 "기본설정(baseline)",
+아래 "기초자료형"은 화면을 만드는 틀이고, 스타일은 그와 별개로 어느 쪽에나 줄 수 있다.
+
+| 이름 | 값 | 모양 |
+|---|---|---|
+| **기본형** | `gridStyle: 'basic'`(기본값, 생략 가능) | `AGGrid.js` 기본 모양 + `ag-theme-alpine` 그대로 |
+| **테이블형** | `gridStyle: 'table'` | 업무용 표 모양: 회색 격자선(`#c8c8c8`), 맑은 고딕 12px, 행 높이 46px, 헤더 높이 48px, 흰 헤더 + 가운데 정렬, 글자 컬럼 가운데 정렬, 네모 칸 행 번호, 줄무늬 없음 |
+
+```js
+new AGGrid({ gridId: '주문', gridStyle: 'table', /* 나머지는 같다 */ });
+```
+
+- **원리**: `gridStyle: 'table'`이면 그리드 div에 `ag-shell-grid-table` 클래스가 붙고,
+  `_injectDefaultStyles()`의 테이블형 CSS가 적용된다. 이 CSS는 `@layer aggrid-defaults`
+  **밖**에 있다 — 레이어 안이면 vendor CSS에 져서 안 먹기 때문이다.
+- **생성 시 한 번만 정한다.** AG Grid가 행 높이를 처음 그릴 때만 읽으므로 뜬 뒤에는
+  못 바꾼다. 시험 화면(`aggrid_entry.php`)은 버튼을 누르면 페이지를 다시 연다.
+- **글자 가운데 정렬**은 `dataType: 'string'`인 컬럼에만 적용된다. 컬럼의 `align`,
+  `cellStyle`이 있으면 그쪽이 우선이고, 숫자(`dataType: 'number'`)는 오른쪽이다.
+- **화면별 조정**: 그 화면 `<style>`에 `#aggrid-<gridId> .ag-shell-grid { … }`로 값을
+  다시 적는다. 예: 행 높이 64px — `--ag-row-height: 64px;`(`aggrid_entry.php`의 버튼3).
+- **테이블형에 없는 것**: 체크박스 열, 셀 줄바꿈 + 행 높이 자동, 하단 버튼줄.
+
+## 행선택기
+
+**행선택기**는 그리드 맨 앞의 좁은 칸(폭 36px)으로, **숫자 없이** 현재 행 표시만
+보여 준다. Access 폼의 레코드 선택기와 같은 것이다(2026-11-05 추가).
+`showRowSelector: true`를 주면 적용되고, 어느 그리드 스타일에나 쓸 수 있다.
+
+```js
+new AGGrid({ gridId: '주문', showRowSelector: true, /* 나머지는 같다 */ });
+```
+
+| 행 상태 | 표시 |
+|---|---|
+| 현재 행(클릭했거나 `selectRow()`로 고른 행) | ▶ |
+| 편집 중인 행(저장 안 함, 신규 행 포함) | ✏️ (▶보다 우선) |
+| 그 밖의 행 | 비어 있음 |
+
+- 맨 앞 칸은 셋 중 하나만 나온다: 행선택기 > 행 번호 > 없음. `showRowSelector: true`를
+  주면 `showRowNumber` 값과 상관없이 행선택기가 나온다. 행 번호와 함께 표시되지 않는다.
+- 처음 열었을 때는 현재 행이 없어 ▶가 보이지 않는다. 행을 클릭하면 나타난다.
+- 현재 행의 값은 AGGrid의 `activeKey`이며 행 강조(파랑)와 같은 값을 쓴다.
+- 폭은 고정이다(`resizable: false`). 세로선은 제목과 본문이 같은 위치에 오도록
+  `ag-shell-grid-rowselector` CSS로 맞춘다 — vendor는 고정 컬럼의 제목 선만 셀 바깥
+  묶음(`.ag-grid-container-wrapper`)에 긋기 때문이다.
+
 ## 기초자료형 — `basicdata/login/login_entry.php`가 표준 예시다
 
 **"기초자료형"**은 DB 테이블 하나를 AGGrid로 **검색·조회·추가·수정·삭제**하는
@@ -330,6 +380,11 @@ new AGGrid({
   height: '480px',                   // 그리드 영역 고정 높이(autoFitBottomGap 없을 때만 씀)
   autoFitBottomGap: 40,               // 주면 height 대신 화면(스크롤 조상) 바닥에서 이 값(px)만큼 띄운 높이로 자동 계산(반응형, resize 시 재계산)
   minHeight: 200,                     // autoFitBottomGap 적용 시 최소 높이
+  gridStyle: 'basic',                // 'basic'(기본형, 기본값) | 'table'(테이블형) — 위 "그리드 스타일" 참고
+  showRowNumber: true,                // 기본 표시(2026-11-05 추가). false면 맨 앞 순번(No) 컬럼을 안 그림 — dirty 행의 연필(✏️) 표시도 같이 없어짐(호박색 강조, 저장 버튼 깜빡임은 그대로)
+  showRowSelector: false,             // 기본 숨김(2026-11-05 추가). true면 숫자 없는 행선택기 표시 — 위 "행선택기" 참고
+  rowHoverPointer: false,             // 기본 끔(2026-11-05 추가). true면 데이터 행 위에서 포인터가 손가락 모양. 생성 시 한 번만 정함
+  rowHoverColor: '#cfe3fb',           // 기본 없음(2026-11-05 추가). 마우스를 올린 행의 색(ag-row-hover 행의 셀 배경을 직접 칠함, 행 번호·행선택기 칸 포함). 호버 중에는 편집 중(호박색)·선택(파랑) 색보다 우선. 안 주면 스타일 기본 음영. 생성 시 한 번만 정함
   defaultMode: 'view',               // 'view'(기본, 읽기전용) | 'edit'
   showGoToTool: false,                // 기본 숨김. true면 "키값으로 이동" 도구 표시
   newRowDefaults: {},                 // (2026-10-20 추가) "+ 행 추가"한 새 행에 미리 채울 값 {필드: 값}. 화면에 안 보이는 FK를 부모 키로 채울 때 사용(예: 고객사 팝업의 담당자 그리드 { parentcode: 고객사키 })
@@ -609,6 +664,9 @@ new AGGrid({
 
 - `src/js/aggrid/AGGrid.js` — 이 클래스 본체.
 - `src/js/aggrid/aggrid.md` — 이 문서.
+- `src/js/aggrid/aggrid_entry.php` — 시험 화면(스타일 조정용). 버튼 10개 + tLogin
+  그리드, `basicdata/login/login_fetch.php`를 그대로 쓴다. 실제 데이터라 "저장"하면
+  DB에 반영된다(행 추가는 꺼 둠, 삭제는 버튼6에서만 켬, 비밀번호 컬럼은 표시 안 함).
 - `src/js/aggrid/vendor/{ag-grid-community.min.js, ag-grid.css,
   ag-theme-alpine.css}` — AG Grid 라이브러리 본체(로컬 저장, CDN 미사용).
   jsdelivr(`cdn.jsdelivr.net/npm/ag-grid-community`)에서 받아온 파일
