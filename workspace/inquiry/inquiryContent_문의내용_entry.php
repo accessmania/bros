@@ -6,7 +6,8 @@ declare(strict_types=1);
  * t문의내역 중 parentcode = ?code(t문의.code)인 행을 보여준다. 보기 전용 —
  * 편집/페이저 없음. 그리드 위에 신규추가/견적자료/발주자료/ECount 버튼 —
  * 신규추가는 부모의 action('addnew_문의내용')을 부른다(addNew),
- * 나머지는 다음 단계.
+ * ECount는 부모의 action('openEcountStock') — ECount (전체재고) 팝업(openEcountStock),
+ * 견적자료/발주자료는 다음 단계.
  * 조회는 inquiryContent_문의내용_fetch.php.
  *
  * 페이지 함수: requery() / action('requery') — 다시 불러온다.
@@ -204,9 +205,21 @@ function addNew() {
     window.parent.action('addnew_문의내용', {}, window);
 }
 
-// 버튼 — 신규추가 말고는 동작을 다음 단계에서 붙인다(지금은 안내만).
+/**
+ * ECount — 이 탭을 품은 문의확인 화면에 action('openEcountStock')을 보낸다. 문의확인이 ECount (전체재고)
+ * 팝업(비모달)을 띄우고, 팝업이 이카운트 전체 재고를 받아 tAPI_재고에 기록한 뒤 보인다.
+ */
+function openEcountStock() {
+    if (window.parent === window || typeof window.parent.action !== 'function') {
+        return;
+    }
+    window.parent.action('openEcountStock', {}, window);
+}
+
+// 버튼 — 신규추가, ECount. 견적자료/발주자료는 다음 단계(지금은 안내만).
 document.getElementById('ic-new').addEventListener('click', addNew);
-document.querySelectorAll('.ic-buttons button:not(#ic-new)').forEach(function (btn) {
+document.getElementById('ic-ecount').addEventListener('click', openEcountStock);
+document.querySelectorAll('.ic-buttons button:not(#ic-new):not(#ic-ecount)').forEach(function (btn) {
     btn.addEventListener('click', function () {
         alert(btn.textContent + ' — 준비 중입니다.');
     });

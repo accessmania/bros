@@ -16,7 +16,7 @@ declare(strict_types=1);
  * 이 화면만 쓰는 action:
  *  - inquiryDetail&code=&parentcode= — 문의내역(t문의내역) 한 건의 제품 정보
  *                           → {success, detail:{제품종류, 품목코드, 모델명, 제품code, 제조사}}
- *                           ("검색(문의code)" 칸에 문의내역 code를 넣으면 제품 칸을 채운다).
+ *                           ("검색(문의내용code)" 칸에 문의내역 code를 넣으면 제품 칸을 채운다).
  *                           같은 문의(parentcode)의 문의내역만 찾는다.
  *
  * 숫자 필드의 천단위 콤마는 CrudJs가 보내기 전에 뗀다. 빈 숫자는 null로 저장한다.
@@ -66,7 +66,7 @@ const NUMBER_FIELDS = [
 const DATE_FIELDS = ['견적날짜'];
 
 /**
- * "검색(문의code)"로 가져오는 문의내역의 제품 정보 — [t문의내역 필드 => t문의_견적산출 필드].
+ * "검색(문의내용code)"로 가져오는 문의내역의 제품 정보 — [t문의내역 필드 => t문의_견적산출 필드].
  * inquiryContent_견적_amd.php의 AMD_DETAIL_MAP과 같아야 한다.
  */
 const DETAIL_TABLE = 't문의내역';
@@ -106,7 +106,7 @@ try {
         $detailCode = isset($_GET['code']) ? trim((string) $_GET['code']) : '';
         $parentCode = isset($_GET['parentcode']) ? trim((string) $_GET['parentcode']) : '';
         if ($detailCode === '' || !ctype_digit($detailCode)) {
-            throw new InvalidArgumentException('문의code가 올바르지 않습니다.');
+            throw new InvalidArgumentException('문의내용code가 올바르지 않습니다.');
         }
         $detail = new Crud($db);
         $detail->init(DETAIL_TABLE);

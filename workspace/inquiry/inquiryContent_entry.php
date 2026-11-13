@@ -708,6 +708,8 @@ function afterCrudSelectRecord(psender, ppara) {
 //   action_model    — openModelSearch / setModel / closeModelSearch(모델 검색 팝업 — 문의내역 팝업 대신 띄운다)
 //   action_buttons  — close / selectRecord / isDirty(버튼 iframe에 맡긴다)
 //   action_customer — setCustomer / closeCustomerSearch(고객사 검색 팝업)
+//   action_formula  — openFormula / closeFormula(수식 팝업 — 각 amd의 수식 버튼)
+//   action_ecount   — openEcountStock / closeEcountStock(ECount 전체재고 팝업 — 문의 탭의 ECount 버튼)
 // ══════════════════════════════════════════════════════════════════
 function action(pcmd, pparams, psender) {
     if (!pparams) {
@@ -746,6 +748,14 @@ function action(pcmd, pparams, psender) {
         case 'setCustomer':
         case 'closeCustomerSearch':
             return action_customer(pcmd, pparams, psender);
+
+        case 'openFormula':
+        case 'closeFormula':
+            return action_formula(pcmd, pparams, psender);
+
+        case 'openEcountStock':
+        case 'closeEcountStock':
+            return action_ecount(pcmd, pparams, psender);
 
         default:
             console.warn('문의확인.action: 알 수 없는 pcmd - ' + pcmd);
@@ -868,6 +878,35 @@ function action_model(pcmd, pparams, psender) {
             return icSetModel(pparams.row);
         case 'closeModelSearch':
             return icCloseModelSearch();
+    }
+}
+
+/**
+ * 수식 팝업(편집 가능, 비모달·이동 가능) — amd 팝업은 작아서 이 화면이 대신 띄운다.
+ *  - openFormula {kind}: 각 amd의 수식 버튼. kind는 IC_FORMULA_KINDS 중 하나(문의내용/수주/발주/견적).
+ *  - closeFormula: 팝업을 닫는다(수식 화면에서 Esc).
+ */
+function action_formula(pcmd, pparams, psender) {
+    switch (pcmd) {
+        case 'openFormula':
+            return icOpenFormula(pparams.kind);
+        case 'closeFormula':
+            return icCloseFormula();
+    }
+}
+
+/**
+ * ECount 전체재고 팝업(비모달·이동 가능) — 문의 탭의 ECount 버튼이 연다.
+ *  - openEcountStock: 팝업을 띄운다(열리면 이카운트 전체 재고를 받아 tAPI_재고에 기록하고 보인다).
+ *    이미 떠 있으면 앞으로 가져오고 다시 받는다(action('refresh')).
+ *  - closeEcountStock: 팝업을 닫는다(팝업 안에서 Esc).
+ */
+function action_ecount(pcmd, pparams, psender) {
+    switch (pcmd) {
+        case 'openEcountStock':
+            return icOpenEcountStock();
+        case 'closeEcountStock':
+            return icCloseEcountStock();
     }
 }
 
@@ -1221,7 +1260,7 @@ function icCloseDetail() {
 // 탭 키(수주/발주/견적)마다 팝업 하나. id는 amdReport의 popupId로 돌아와 어느 탭인지 알려 준다.
 var IC_SUB_POPUPS = {
     '수주': { id: 'ic-order', url: encodeURIComponent('inquiryContent_수주_amd.php'), width: 600, height: 720 },
-    '발주': { id: 'ic-purchase', url: encodeURIComponent('inquiryContent_발주_amd.php'), width: 600, height: 780 },
+    '발주': { id: 'ic-purchase', url: encodeURIComponent('inquiryContent_발주_amd.php'), width: 600, height: 720 },
     '견적': { id: 'ic-quote', url: encodeURIComponent('inquiryContent_견적_amd.php'), width: 600, height: 860 }
 };
 // 떠 있는 팝업(Popup) {탭 키: Popup} — 없으면 null. 팝업이 닫히면 onClose가 null로 되돌린다.
@@ -1413,6 +1452,132 @@ function icSetModel(prow) {
         requester.action('setModel', { row: prow }, window);
     } catch (err) {
         // 그 사이 문의내역 팝업이 닫혔으면 넘길 곳이 없다.
+    }
+}
+
+// ── 수식 팝업(편집 가능) — amd 대신 이 화면이 띄운다 ──
+// 비모달(Popup.js, modal:false) — 뒤의 화면·amd 팝업을 그대로 쓸 수 있고, 제목줄을 끌어 옮길 수 있다.
+// 수식 화면 하나가 ?kind=로 테이블을 고른다(inquiryContent_수식_tables.php의 FORMULA_TABLES와 같은 목록).
+var IC_FORMULA_URL = encodeURIComponent('inquiryContent_수식_entry.php');
+var IC_FORMULA_KINDS = ['문의내용', '수주', '발주', '견적'];
+// 수식 팝업 크기(px) — 화면이 작으면 화면에 맞춰 줄인다(icOpenFormula).
+var IC_FORMULA_WIDTH = 1150;
+var IC_FORMULA_HEIGHT = 620;
+// 떠 있는 수식 팝업(Popup)과 그 종류 — 없으면 null. 팝업이 닫히면 onClose가 null로 되돌린다.
+var icFormulaPopup = null;
+var icFormulaKind = null;
+
+/**
+ * 수식 팝업을 연다(비모달, 이동 가능) — 처리했으면 true, 모르는 kind면 false.
+ *  - 같은 종류가 이미 떠 있으면 다시 열지 않고 앞으로 가져온다.
+ *  - 다른 종류가 떠 있으면 그 팝업을 닫고 새 종류로 연다(수식 팝업은 하나만).
+ */
+function icOpenFormula(pkind) {
+    var known = false;
+    var width = IC_FORMULA_WIDTH;
+    var height = IC_FORMULA_HEIGHT;
+    var i;
+
+    for (i = 0; i < IC_FORMULA_KINDS.length; i++) {
+        if (IC_FORMULA_KINDS[i] === pkind) {
+            known = true;
+        }
+    }
+    if (!known) {
+        console.warn('문의확인.icOpenFormula: 알 수 없는 수식 종류 - ' + pkind);
+        return false;
+    }
+
+    if (icFormulaPopup !== null) {
+        if (icFormulaKind === pkind) {
+            icFormulaPopup.bringToFront();
+            return true;
+        }
+        icCloseFormula();
+    }
+
+    if (width > window.innerWidth - 40) {
+        width = window.innerWidth - 40;
+    }
+    if (height > window.innerHeight - 80) {
+        height = window.innerHeight - 80;
+    }
+    icFormulaKind = pkind;
+    icFormulaPopup = new Popup({
+        id: 'ic-formula',
+        title: '수식 (' + pkind + ')',
+        modal: false,
+        draggable: true,
+        position: { top: 40, left: 20 },
+        iframeUrl: IC_FORMULA_URL + '?kind=' + encodeURIComponent(pkind),
+        iframeWidth: width,
+        iframeHeight: height,
+        bodyPadding: 0,
+
+        onClose: function () {
+            icFormulaPopup = null;
+            icFormulaKind = null;
+        }
+    });
+    return true;
+}
+
+/** 수식 팝업을 닫는다(수식 화면에서 Esc — action('closeFormula')). 없으면 아무것도 안 한다. */
+function icCloseFormula() {
+    if (icFormulaPopup !== null) {
+        icFormulaPopup.close();
+    }
+}
+
+// ── ECount 전체재고 팝업(비모달, 이동 가능) — Access "ECount (전체재고)" 폼과 같은 배치 ──
+var IC_ECOUNT_STOCK_URL = encodeURIComponent('inquiryContent_ECount재고_entry.php');
+// 팝업 크기(px) — 품목코드·수량 두 칸이라 좁다. 화면이 작으면 높이를 줄인다.
+var IC_ECOUNT_STOCK_WIDTH = 480;
+var IC_ECOUNT_STOCK_HEIGHT = 760;
+// 떠 있는 팝업(Popup) — 없으면 null. 팝업이 닫히면 onClose가 null로 되돌린다.
+var icEcountStockPopup = null;
+
+/** ECount 전체재고 팝업을 연다 — 이미 떠 있으면 앞으로 가져오고 이카운트에서 다시 받는다. */
+function icOpenEcountStock() {
+    var height = IC_ECOUNT_STOCK_HEIGHT;
+    var win = null;
+
+    if (icEcountStockPopup !== null) {
+        icEcountStockPopup.bringToFront();
+        if (icEcountStockPopup.iframeEl) {
+            win = icEcountStockPopup.iframeEl.contentWindow;
+        }
+        if (win && typeof win.action === 'function') {
+            win.action('refresh', {}, window);
+        }
+        return true;
+    }
+
+    if (height > window.innerHeight - 80) {
+        height = window.innerHeight - 80;
+    }
+    icEcountStockPopup = new Popup({
+        id: 'ic-ecount-stock',
+        title: 'ECount (전체재고)',
+        modal: false,
+        draggable: true,
+        position: 'center',     // 화면 가운데에 띄운다(끌어서 옮길 수 있다)
+        iframeUrl: IC_ECOUNT_STOCK_URL,
+        iframeWidth: IC_ECOUNT_STOCK_WIDTH,
+        iframeHeight: height,
+        bodyPadding: 0,
+
+        onClose: function () {
+            icEcountStockPopup = null;
+        }
+    });
+    return true;
+}
+
+/** ECount 전체재고 팝업을 닫는다. 없으면 아무것도 안 한다. */
+function icCloseEcountStock() {
+    if (icEcountStockPopup !== null) {
+        icEcountStockPopup.close();
     }
 }
 
@@ -1805,6 +1970,7 @@ function icInit() {
             icCloseModelSearch();
         }
     });
+    // 수식 팝업은 비모달(Popup.js) — 닫기는 팝업의 × 버튼, 또는 수식 화면 안에서 Esc(action('closeFormula')).
 
     // 모델 검색 팝업 — × 버튼, 바깥(반투명 막) 클릭으로 닫는다.
     document.getElementById('ic-model-modal-close').addEventListener('click', icCloseModelSearch);

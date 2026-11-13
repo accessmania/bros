@@ -44,7 +44,7 @@ declare(strict_types=1);
  *  - 비고(여러 줄 — 남는 높이를 crudbuttons 바로 위까지 채운다)
  *  - crudbuttons(저장/삭제/신규입력/창닫기)
  *
- * 재계산/수식/ECount는 다음 단계. t문의내역에 없는 필드의 칸은 비활성으로 두고 저장하지 않는다.
+ * ECount 버튼은 품목코드의 이카운트 재고를 버튼 옆에 보인다(amdEcountStock). 수식은 문의확인의 수식 팝업(action('openFormula')). 재계산은 calc() — 폼 값을 inquiryContent_calcFormula_fetch.php에 보내 tb수식_문의를 순서대로 계산하고, 결과를 칸에 넣는다(저장은 저장 버튼). t문의내역에 없는 필드의 칸은 비활성으로 두고 저장하지 않는다.
  *
  * 페이지 함수: action(pcmd, pparams, psender) — 종류별 action_xxx로 나눠 넘긴다.
  *  - 'requery' — 다시 읽는다(저장 안 한 값이 있으면 건너뛴다).
@@ -145,7 +145,8 @@ $buttonsSrc = APP_BASE_URL . '/src/Model/Crud/crudbuttons/crudbuttons.php?fetch=
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>문의내역</title>
 <style>
-html, body { margin: 0; height: 100%; }
+/* amd 창은 스크롤바를 보이지 않는다 — 팝업 크기에 맞춰 배치한다(창이 작으면 아래가 잘린다). */
+html, body { margin: 0; height: 100%; overflow: hidden; }
 body {
     display: flex; flex-direction: column;
     padding: 18px 40px 6px; box-sizing: border-box; background: #ececec; color: #000;
@@ -183,7 +184,10 @@ button {
 button:hover:not(:disabled) { background: #d4d4d4; }
 button:disabled { color: #9ca3af; cursor: default; }
 .amd-icon-btn { width: 25px; padding: 0; flex: none; }
-.amd-ecount { grid-column: 1 / 3; justify-self: start; }
+/* ECount 버튼 줄 — 버튼 옆에 이카운트 재고(제품·수량) 또는 실패 이유 */
+.amd-ecount-row { grid-column: 1 / 5; display: flex; align-items: center; gap: 10px; }
+.amd-ecount-result { color: #dc2626; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.amd-ecount-result.amd-error { color: #dc2626; }
 .amd-ecount b { color: #dc2626; }
 
 /* 비고 — 폼과 같은 칸 배치(라벨 80px + 값), 남는 높이를 다 차지한다(body가 세로 flex). */
@@ -252,7 +256,10 @@ button:disabled { color: #9ca3af; cursor: default; }
     <label for="제조사">제조사</label>
     <?= amd_text_input($schemaFields, '제조사', 'amd-wide') ?>
 
-    <button type="button" class="amd-ecount" id="amd-ecount"><b>!</b> ECount</button>
+    <div class="amd-ecount-row">
+        <button type="button" class="amd-ecount" id="amd-ecount"><b>!</b> ECount</button>
+        <span class="amd-ecount-result" id="amd-ecount-result"></span>
+    </div>
 
     <hr class="amd-sep">
 
@@ -340,6 +347,12 @@ var AMD_PRODUCT_MAP = {
     '제조사': '제조사'
 };
 var AMD_MODEL_SEARCH_URL = encodeURIComponent('inquiryContent_모델검색_entry.php');
+// 수식 계산 창구 — 폼 값을 보내면 tb수식_문의를 순서대로 계산한 결과(JSON)를 돌려준다.
+var AMD_CALC_URL = encodeURIComponent('inquiryContent_calcFormula_fetch.php') + '?kind=' + encodeURIComponent('문의내용');
+// ECount 버튼 창구 — 품목코드로 이카운트 재고(품목 하나)를 조회한다.
+var AMD_ECOUNT_URL = encodeURIComponent('inquiryContent_ECount_fetch.php');
+// calc 요청 순번 — 빨간 칸을 빨리 연달아 고치면 calc가 겹친다. 늦게 온 앞 요청의 결과가 나중 결과를 덮지 않게.
+var amdCalcSeq = 0;
 // 모델 검색 결과 {모델명: {제품종류, 품목코드, 제조사}} — 모델을 고르면 그 값을 칸에 채운다.
 var amdModels = {};
 // 마지막으로 찾은 검색어 — Enter로 찾은 뒤 칸을 떠날 때(change) 같은 검색을 또 하지 않게.
@@ -400,6 +413,7 @@ function afterCrudClear(psender, ppara) {
     amdResetModelList('');
     amdFindModels(true);
     amdFormatAllNumbers();
+    amdEcountShow('', false);   // 다른 레코드 — 앞 품목의 이카운트 재고를 지운다
     amdCaption(psender);
 }
 
@@ -426,6 +440,7 @@ function afterCrudSelectRecord(psender, ppara) {
         }
     }
     amdFormatAllNumbers();
+    amdEcountShow('', false);   // 다른 레코드 — 앞 품목의 이카운트 재고를 지운다
     amdCaption(psender);
 }
 
@@ -858,15 +873,193 @@ function amdSetModel(prow) {
     amdButtonsRefresh();
 }
 
+/**
+ * 수식 버튼 — 문의내용 수식(tb수식_문의, inquiryContent_수식_entry.php?kind=문의내용) 목록을 띄운 쪽(문의확인)에 맡겨 연다
+ * (action('openFormula', {kind: '문의내용'}) — amd 팝업 안이 아니라 문의확인 화면의 팝업).
+ */
+function amdOpenFormula() {
+    if (window.parent === window || typeof window.parent.action !== 'function') {
+        amdMessage('문의확인 화면에서 열었을 때만 볼 수 있습니다.', true);
+        return;
+    }
+    window.parent.action('openFormula', { kind: '문의내용' }, window);
+}
+
+/**
+ * calc() — 수식 적용(재계산 버튼이 부른다).
+ *  1. 지금 폼 값 전부를 계산 창구(inquiryContent_calcFormula_fetch.php?kind=문의내용)에 보낸다.
+ *  2. 서버가 tb수식_문의를 순서대로 계산해 {success, results: {필드명: 결과}}를 돌려준다.
+ *  3. results의 값을 폼 칸에 넣는다(CrudJs setValue — 저장은 하지 않는다. 저장 버튼으로 저장).
+ *     콤보 칸(상태, 모델명)은 목록에 없는 값이면 항목을 만들어 넣는다.
+ *     이 폼(t문의내역)에 없는 필드는 넣지 않고 안내 글에 이름을 보인다.
+ *     (이 화면에는 날짜 칸이 없어 날짜 표시 정리(amdMarkEmptyDates)는 하지 않는다 — 수주/발주/견적 amd와 다른 점.)
+ * 실패하면 칸은 그대로 두고 "재계산 실패: 이유"를 보인다. 처리했으면 true.
+ */
+async function calc() {
+    var crud;
+    var names;
+    var values = {};
+    var res;
+    var data;
+    var resultNames;
+    var applied = 0;
+    var skipped = [];
+    var name;
+    var el;
+    var seq;
+    var i;
+
+    if (amdSender === null || amdSender.getCrud() === null) {
+        amdMessage('재계산 실패: 폼이 아직 준비되지 않았습니다.', true);
+        return false;
+    }
+    amdCalcSeq = amdCalcSeq + 1;
+    seq = amdCalcSeq;
+
+    // 1. 폼 값 전부 — getValue는 화면 값을 먼저 흡수한다(숫자 칸의 콤마도 뗀다).
+    crud = amdSender.getCrud();
+    names = Object.keys(crud.schema.fields);
+    for (i = 0; i < names.length; i++) {
+        values[names[i]] = crud.getValue(names[i]);
+    }
+
+    // 2. 계산 의뢰.
+    amdMessage('재계산 중...', false);
+    try {
+        res = await fetch(AMD_CALC_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ values: values })
+        });
+        data = await res.json();
+        if (!data.success) {
+            throw new Error(data.error);
+        }
+    } catch (err) {
+        if (seq === amdCalcSeq) {
+            amdMessage('재계산 실패: ' + err.message, true);
+        }
+        return false;
+    }
+    // 기다리는 사이 새 calc가 시작됐으면 이 결과는 버린다(새 calc가 최신 값으로 계산한다).
+    if (seq !== amdCalcSeq) {
+        return false;
+    }
+
+    // 3. 결과를 칸에 — 이 폼에 있는 필드만.
+    resultNames = Object.keys(data.results);
+    for (i = 0; i < resultNames.length; i++) {
+        name = resultNames[i];
+        if (crud.schema.fields[name]) {
+            el = document.getElementById(name);
+            if (el !== null && el.tagName === 'SELECT') {
+                amdEnsureOption(name, data.results[name]);
+            }
+            amdSetField(name, data.results[name]);
+            applied++;
+        } else {
+            skipped.push(name);
+        }
+    }
+    amdFormatAllNumbers();
+    // 스크립트로 넣은 값은 입력 이벤트가 안 생긴다 — 저장 버튼의 "수정됨" 표시를 다시 정하게 한다.
+    amdButtonsRefresh();
+
+    if (skipped.length > 0) {
+        amdMessage('재계산했습니다(' + applied + '개 칸). 폼에 없는 필드는 넣지 않았습니다: ' + skipped.join(', '), false);
+    } else {
+        amdMessage('재계산했습니다(' + applied + '개 칸).', false);
+    }
+    return true;
+}
+
+/**
+ * 빨간 레이블의 칸(수량, 구매원가, USD구매원가, 판매단가, USD판매단가 — 레이블 class amd-red의 for)은
+ * 사용자가 값을 바꾸고 칸을 떠나면(change — Access AfterUpdate) calc()를 부른다.
+ * 스크립트로 넣은 값(calc 결과, 레코드 열기)은 change가 생기지 않으므로 calc가 되풀이되지 않는다.
+ * 빨간 레이블을 더하거나 빼면 화면 HTML만 고치면 된다(여기서 레이블을 찾는다).
+ */
+function amdBindCalcTriggers() {
+    var labels = document.querySelectorAll('#amd-form label.amd-red');
+    var el;
+    var i;
+
+    for (i = 0; i < labels.length; i++) {
+        el = document.getElementById(labels[i].htmlFor);
+        if (el !== null && !el.disabled) {
+            el.addEventListener('change', calc);
+        }
+    }
+}
+
+/**
+ * ECount 버튼 — 폼의 품목코드로 이카운트 재고를 조회해 버튼 옆에 빨간 글로 "제품코드 : 수량"을 보인다
+ * 창구: inquiryContent_ECount_fetch.php(ECount::inventoryOne, 시험 서버/실제 서버는 ECount::TEST_SERVER).
+ * 실패하면 이유를 빨간 글로 보인다. 레코드를 열거나 비우면 지운다(다른 품목의 재고가 남아 보이지 않게).
+ */
+async function amdEcountStock() {
+    var code = amdTrim(document.getElementById('품목코드').value);
+    var res;
+    var data;
+    var qty;
+
+    if (code === '') {
+        amdEcountShow('품목코드가 없습니다.', true);
+        return;
+    }
+    amdEcountShow('조회 중...', false);
+    try {
+        res = await fetch(AMD_ECOUNT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productCode: code })
+        });
+        data = await res.json();
+        if (!data.success) {
+            throw new Error(data.error);
+        }
+    } catch (err) {
+        amdEcountShow('ECount 실패: ' + err.message, true);
+        return;
+    }
+    if (data.result === null) {
+        amdEcountShow('이카운트에 없는 품목입니다: ' + code, true);
+        return;
+    }
+    qty = Number(String(data.result['수량']).replace(/,/g, ''));
+    if (isNaN(qty)) {
+        qty = data.result['수량'];
+    } else {
+        qty = qty.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    }
+    amdEcountShow(data.result['품목코드'] + ' : ' + qty, false);
+}
+
+/** ECount 결과 글 — pisError면 빨간 글. 빈 글이면 지운다. */
+function amdEcountShow(ptext, pisError) {
+    var el = document.getElementById('amd-ecount-result');
+
+    if (el === null) {
+        return;
+    }
+    el.textContent = ptext;
+    if (pisError) {
+        el.classList.add('amd-error');
+    } else {
+        el.classList.remove('amd-error');
+    }
+}
+
 // ── 시작 — 이벤트 연결 ──
 function amdInit() {
     var nums = document.querySelectorAll('#amd-form .amd-num');
-    var soon = ['amd-recalc', 'amd-formula', 'amd-ecount'];
+    var soon = [];
     var i;
 
     for (i = 0; i < nums.length; i++) {
         amdBindNumber(nums[i]);
     }
+    amdBindCalcTriggers();
 
     // 검색 — Enter를 누르거나, 글자를 바꾸고 칸을 떠나면(change) 모델 목록을 찾아 콤보를 펼친다.
     document.getElementById('검색').addEventListener('keydown', function (pevent) {
@@ -892,7 +1085,14 @@ function amdInit() {
     });
     document.getElementById('모델명').addEventListener('change', amdSelectModel);
 
-    // 재계산/수식/ECount — 다음 단계(지금은 안내만).
+    // 준비 중인 버튼 — 누르면 안내만(지금은 없음).
+    // 수식 버튼 = 수식 목록 팝업. 재계산 버튼 = calc()(수식 적용 — 결과를 칸에 넣는다).
+    document.getElementById('amd-formula').addEventListener('click', amdOpenFormula);
+    document.getElementById('amd-recalc').addEventListener('click', calc);
+
+    // ECount 버튼 = 품목코드의 이카운트 재고를 버튼 옆에.
+    document.getElementById('amd-ecount').addEventListener('click', amdEcountStock);
+
     for (i = 0; i < soon.length; i++) {
         amdBindSoon(document.getElementById(soon[i]));
     }

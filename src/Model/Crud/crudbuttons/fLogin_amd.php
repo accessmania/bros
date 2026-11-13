@@ -54,7 +54,8 @@ $buttonsSrc = 'crudbuttons.php?fetch=' . rawurlencode($fetchUrl) . '&pk=' . rawu
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>로그인</title>
 <style>
-html, body { margin: 0; height: 100%; }
+/* amd 창은 스크롤바를 보이지 않는다 — 팝업 크기에 맞춰 배치한다(창이 작으면 아래가 잘린다). */
+html, body { margin: 0; height: 100%; overflow: hidden; }
 body {
     display: flex; flex-direction: column; padding: 16px 20px 6px; box-sizing: border-box;
     background: #ececec; color: #000; font-family: 'Malgun Gothic', 'Segoe UI', system-ui, sans-serif; font-size: 13px;
