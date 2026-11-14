@@ -92,6 +92,8 @@ function action(pcmd, pparams, psender) {
 - `setValue(value)` — 값을 강제로 대입 + 그 달로 화면 이동(이벤트는
   안 쏨)
 - `showMonth(year, month1to12)` — 선택값은 그대로, 보이는 달만 이동
+- `isMemoPopupOpen()` — 메모 팝업이 열려 있으면 `true`(2026-11-14 추가). `action('show')`로 다시
+  읽으면 화면을 새로 그리며 팝업이 닫혀 쓰던 메모가 사라지므로, 다시 읽기 전에 확인하는 데 쓴다.
 - `destroy()` — DOM/이벤트 정리 + `Calendar.instances`에서 제거
 - `Calendar.instance(id)` — 정적 메서드, 등록된 인스턴스를 id로 조회
   (`AGGrid.instance(gridId)`와 동일 패턴)
@@ -114,6 +116,18 @@ function action(pcmd, pparams, psender) {
 요일 순서(`weekStart`)/선택 모드(`selectionMode`)는 URL 자동 갱신 대상이
 아니다 — 날짜 클릭만큼 자주 바뀌는 값이 아니라고 보고, 이 값을 바꾸고
 싶은 화면은 새 옵션으로 페이지를 다시 여는(링크 재요청) 방식을 쓴다.
+
+## Calendar_entry.php / Calendar_fetch.php (일정 메모)
+
+- `Calendar_entry.php` — 시험 화면이자 **메뉴 "업무 > 일정"** 화면(index 탭). `memoPopup`(기본 켜짐)이면
+  날짜 칸을 누를 때 메모 팝업이 뜨고, 메모는 `Calendar_fetch.php`(`tCalendar_schedule`, 접속 `mssql`)에
+  `cmd=show/save/delete`로 읽고 쓴다.
+- 두 파일 모두 `Login::isAlive()`로 시작한다(2026-11-14 추가 — 일정 메모를 바꾸는 엔드포인트라 로그인 필수).
+- 날짜 선택 결과(`sender.action(callback, …)`)를 받는 곳: Popup으로 열면 그 Popup/부모, 직접 열거나
+  **index 탭으로 열면 이 페이지 자신**(아무것도 안 함). index 탭일 때 부모(index)로 보내지 않는 것은
+  index에 그 pcmd가 없어 "알 수 없는 pcmd" 경고만 남기 때문이다.
+- index 탭으로 **다시 돌아오면**(index의 `action('requery')`) 지금 보이는 달의 메모를 다시 읽는다
+  (`action('show', {year, month})`). 메모 팝업이 열려 있으면 건너뛴다(`isMemoPopupOpen()`).
 
 ## 4_3(달력) 실사용 예
 

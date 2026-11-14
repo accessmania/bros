@@ -83,30 +83,188 @@ function h($value): string
 {
     return Str::escape($value);
 }
+
+// 로고(src/img/image.png, 343×77, 바탕 #085E7F 단색). 왼쪽 브랜드 영역을 같은 색으로 칠해
+// 로고 사각형 경계가 보이지 않게 한다 — 그래서 --brand 값은 로고 바탕색과 반드시 같아야 한다.
+$logoUrl = APP_BASE_URL . '/src/img/image.png';
 ?>
 <!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<title>로그인</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>로그인 — BroS POWER</title>
 <style>
-    body { font-family: 'Segoe UI', Inter, system-ui, -apple-system, sans-serif; background: #f5f6f8; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-    .login-box { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 32px; width: 320px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-    .login-box h1 { font-size: 1.3rem; margin: 0 0 20px; }
-    .login-box .error { background: #fef2f2; color: #dc2626; border-radius: 6px; padding: 8px 12px; font-size: 0.85rem; margin-bottom: 16px; }
-    .field { margin-bottom: 14px; }
-    .field label { display: block; font-size: 0.85rem; color: #374151; margin-bottom: 4px; }
-    .field input[type="text"], .field input[type="password"] { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem; }
-    .remember { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: #374151; margin-bottom: 18px; }
-    button { width: 100%; padding: 9px; border: none; border-radius: 6px; background: #2563eb; color: #fff; font-size: 0.95rem; cursor: pointer; }
-    button:hover { background: #1d4ed8; }
+    :root {
+        --brand: #085E7F;          /* 로고 바탕색과 같은 값(위 PHP 주석) */
+        --brand-dark: #064a65;
+        --brand-soft: #e6f1f5;
+        --ink: #0f2430;
+        --muted: #5b6b75;
+        --line: #d5dee3;
+        --danger: #c62828;
+        --danger-bg: #fdecec;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+        font-family: 'Pretendard', 'Malgun Gothic', 'Segoe UI', system-ui, -apple-system, sans-serif;
+        color: var(--ink);
+        background: #f3f6f8;
+    }
+
+    /* 화면 = 왼쪽 브랜드 영역 + 오른쪽 로그인 폼 */
+    .lg-wrap { display: flex; min-height: 100vh; }
+
+    /* 왼쪽 — 로고와 같은 단색 바탕. 꾸밈(빛·원)은 모서리에만 두어 로고 둘레는 단색 그대로다. */
+    .lg-brand {
+        position: relative;
+        flex: 1.15;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        background:
+            radial-gradient(circle at 0% 0%, rgba(255, 255, 255, 0.10), transparent 32%),
+            radial-gradient(circle at 100% 100%, rgba(0, 0, 0, 0.18), transparent 38%),
+            var(--brand);
+        color: #fff;
+        padding: 48px 32px;
+    }
+    .lg-ring {
+        position: absolute;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        pointer-events: none;
+    }
+    .lg-ring.r1 { width: 520px; height: 520px; left: -260px; bottom: -260px; }
+    .lg-ring.r2 { width: 340px; height: 340px; left: -170px; bottom: -170px; border-color: rgba(255, 255, 255, 0.18); }
+    .lg-ring.r3 { width: 260px; height: 260px; right: -110px; top: -110px; }
+    .lg-logo { display: block; width: 343px; max-width: 80%; height: auto; position: relative; }
+    .lg-tagline {
+        position: relative;
+        margin: 22px 0 0;
+        font-size: 0.95rem;
+        letter-spacing: 0.32em;
+        color: rgba(255, 255, 255, 0.78);
+        text-align: center;
+    }
+    .lg-rule { width: 56px; height: 2px; margin: 18px auto 0; background: rgba(255, 255, 255, 0.45); position: relative; }
+    .lg-copy {
+        position: absolute;
+        bottom: 22px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 0.75rem;
+        letter-spacing: 0.08em;
+        color: rgba(255, 255, 255, 0.55);
+    }
+
+    /* 오른쪽 — 로그인 폼 */
+    .lg-panel {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 48px 24px;
+        background: #fff;
+    }
+    .lg-form { width: 100%; max-width: 340px; }
+    .lg-form h1 { margin: 0; font-size: 1.6rem; font-weight: 700; letter-spacing: -0.01em; }
+    .lg-form .lg-sub { margin: 6px 0 28px; font-size: 0.9rem; color: var(--muted); }
+    .lg-error {
+        margin: 0 0 18px;
+        padding: 10px 12px;
+        border-left: 3px solid var(--danger);
+        border-radius: 6px;
+        background: var(--danger-bg);
+        color: var(--danger);
+        font-size: 0.85rem;
+    }
+    .field { margin-bottom: 16px; }
+    .field label { display: block; margin-bottom: 6px; font-size: 0.82rem; font-weight: 600; color: #34444e; }
+    .field input[type="text"], .field input[type="password"] {
+        width: 100%;
+        height: 44px;
+        padding: 0 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfd;
+        font: inherit;
+        font-size: 0.95rem;
+        color: var(--ink);
+        transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+    }
+    .field input:focus {
+        outline: none;
+        border-color: var(--brand);
+        background: #fff;
+        box-shadow: 0 0 0 3px rgba(8, 94, 127, 0.15);
+    }
+    .remember {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 4px 0 24px;
+        font-size: 0.86rem;
+        color: #34444e;
+        cursor: pointer;
+        user-select: none;
+    }
+    .remember input { width: 16px; height: 16px; margin: 0; accent-color: var(--brand); }
+    .lg-submit {
+        width: 100%;
+        height: 46px;
+        border: none;
+        border-radius: 8px;
+        background: var(--brand);
+        color: #fff;
+        font-family: 'Pretendard', 'Malgun Gothic', 'Segoe UI', system-ui, -apple-system, sans-serif;
+        font-size: 1rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        cursor: pointer;
+        box-shadow: 0 6px 16px -6px rgba(8, 94, 127, 0.55);
+        transition: background 0.15s, transform 0.05s;
+    }
+    .lg-submit:hover { background: var(--brand-dark); }
+    .lg-submit:active { transform: translateY(1px); }
+    .lg-submit:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(8, 94, 127, 0.3); }
+
+    /* 좁은 화면 — 로고 띠를 위에, 폼을 아래에 쌓는다. */
+    @media (max-width: 820px) {
+        .lg-wrap { flex-direction: column; }
+        /* 띠가 낮아 모서리 빛이 로고까지 닿으면 로고 사각형 경계가 드러난다 — 좁은 화면은 단색만. */
+        .lg-brand { flex: none; padding: 40px 16px 34px; background: var(--brand); }
+        .lg-ring { display: none; }
+        .lg-tagline { margin-top: 14px; font-size: 0.8rem; letter-spacing: 0.24em; }
+        .lg-rule, .lg-copy { display: none; }
+        .lg-panel { flex: 1; align-items: flex-start; padding: 32px 16px 40px; }
+    }
 </style>
 </head>
 <body>
-<div class="login-box">
+<div class="lg-wrap">
+    <!-- 왼쪽 브랜드 영역 — 로고(src/img/image.png)와 같은 바탕색 -->
+    <section class="lg-brand" aria-label="BroS POWER">
+        <span class="lg-ring r1"></span>
+        <span class="lg-ring r2"></span>
+        <span class="lg-ring r3"></span>
+        <img class="lg-logo" src="<?= h($logoUrl) ?>" alt="BroS POWER" width="343" height="77">
+        <p class="lg-tagline">업무 통합 관리 시스템</p>
+        <div class="lg-rule"></div>
+        <div class="lg-copy">© BroS POWER</div>
+    </section>
+
+    <!-- 오른쪽 로그인 폼 — 동작(필드 이름·action·hidden return)은 예전과 같다 -->
+    <main class="lg-panel">
+    <div class="lg-form">
     <h1>로그인</h1>
+    <p class="lg-sub">아이디와 비밀번호를 입력하세요.</p>
     <?php if ($flashError !== ''): ?>
-    <p class="error"><?= h($flashError) ?></p>
+    <p class="lg-error"><?= h($flashError) ?></p>
     <?php endif; ?>
     <form method="post" action="login_action.php">
         <input type="hidden" name="return" value="<?= h($return) ?>">
@@ -121,8 +279,10 @@ function h($value): string
         <label class="remember">
             <input type="checkbox" name="remember" value="1"<?= $rememberChecked ?>> 계정저장
         </label>
-        <button type="submit">로그인</button>
+        <button type="submit" class="lg-submit">로그인</button>
     </form>
+    </div>
+    </main>
 </div>
 </body>
 </html>

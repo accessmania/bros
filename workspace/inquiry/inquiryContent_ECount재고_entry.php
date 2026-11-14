@@ -17,6 +17,11 @@ declare(strict_types=1);
  * 페이지 함수: action(pcmd, pparams, psender)
  *  - 'refresh' — 이카운트에서 다시 받아 기록하고 다시 읽는다(팝업이 이미 떠 있을 때 ECount 버튼을 또 누르면).
  * Esc를 누르면 부모(문의확인)의 action('closeEcountStock')로 팝업을 닫는다.
+ *
+ * 메뉴 "기타자료 > ECount"로 index 탭에도 연다(팝업과 같은 화면). 탭일 때는:
+ *  - 열 때 위 흐름 그대로(tAPI_재고 먼저, 이어서 이카운트에서 받아 기록).
+ *  - index가 탭을 옮길 때 부르는 action('requery')는 아무것도 안 한다(이카운트를 매번 다시 받지 않음).
+ *  - Esc는 아무것도 안 한다(닫을 팝업이 없다 — 탭은 탭의 X로 닫는다).
  */
 for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir = dirname($__bootDir)) {
     if ($__bootDir === dirname($__bootDir)) {
@@ -229,6 +234,10 @@ function action(pcmd, pparams, psender) {
     switch (pcmd) {
         case 'refresh':
             return action_refresh(pcmd, pparams, psender);
+        case 'requery':
+            // 메뉴 "기타자료 > ECount" 탭으로 열었을 때 index가 탭을 옮길 때마다 부른다.
+            // 이카운트를 매번 다시 받지 않는다(외부 호출) — 다시 받으려면 화면을 다시 연다.
+            return;
         default:
             console.warn('ECount재고.action: 알 수 없는 pcmd - ' + pcmd);
     }
@@ -250,6 +259,10 @@ function esKeyDown(pevent) {
         return;
     }
     if (window.parent === window || typeof window.parent.action !== 'function') {
+        return;
+    }
+    // index 탭으로 열렸으면(메뉴 "기타자료 > ECount") 닫아 줄 팝업이 없다 — 탭은 탭의 X로 닫는다.
+    if (window.frameElement && window.frameElement.hasAttribute('data-tab-iframe')) {
         return;
     }
     window.parent.action('closeEcountStock', {}, window);

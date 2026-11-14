@@ -119,7 +119,7 @@ VBA식으로 쓰더라도 아래는 문법 취향이 아니라 사고를 막는 
   `action('openXxx', {code})`로 code만 바꾼다 — 입력폼은 crudbuttons의 `selectRecord`/`clear`(CrudJs
   스키마는 처음 한 번만), 하위폼은 각자 `action('setParent', {code})`, 신규('new')면 하위폼 iframe은
   숨기기만 한다. index 탭 제목은 `action('setTabTitle', {id, title, activate})`(iframe을 다시 불러오지 않음).
-  예: `inquiryContent_entry.php`의 `openInquiry` / `icApplyCode`, 목록 `inquiry_entry.php`의 `openInquiryContent`.
+  예: `inquiryContent_entry.php`의 `openInquiry` / `icApplyCode`, 목록 `inquiry_문의_entry.php`의 `openInquiryContent`.
 
 ## 5. 작업 방식
 - 새 부품·규칙을 만들면 **그 폴더의 md에 사용법과 원리**를 적는다(다른 AI도 md만 읽고 알 수 있게).

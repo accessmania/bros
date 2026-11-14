@@ -22,8 +22,13 @@ require_once __DIR__ . '/../db/DbContext.php';
  */
 class Auth
 {
-    /** 실제 tAuth 컬럼 구성(2026-08-26 확정). */
-    const FIELDS = ['code', 'authname', 'authstring', 'authcodes', 'memo'];
+    /**
+     * 실제 tAuth 컬럼 구성(2026-08-26 확정, 2026-11-14 fieldvisiblecode 추가).
+     * 코드에서 이 목록으로 거르지 않는다 — loadByCode()는 레코드 전체를 세션에 담는다.
+     * fieldvisiblecode = 필드감추기 그룹(tfieldvisible_parent.code). 이 권한에서
+     * 숨길 필드는 tfieldvisible WHERE parentcode = fieldvisiblecode.
+     */
+    const FIELDS = ['code', 'authname', 'authstring', 'authcodes', 'memo', 'fieldvisiblecode'];
 
     const SESSION_KEY = 'auth';
     const TABLE_NAME = 'tAuth';
@@ -65,7 +70,7 @@ class Auth
     }
 
     /**
-     * getValue(필드명) — code/authname/authstring/authcodes/memo 중
+     * getValue(필드명) — code/authname/authstring/authcodes/memo/fieldvisiblecode 중
      * 하나의 값을 그대로 반환한다. "권한이 있는지 없는지" 판단은 이
      * 메서드가 아니라 hasAuthority()가 전담한다(같은 메서드가 상황에
      * 따라 원본 값과 있음/없음 판정을 섞어 반환하면 호출부가 헷갈리기

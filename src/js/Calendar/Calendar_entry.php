@@ -22,6 +22,14 @@ declare(strict_types=1);
  *      실제로 호출된다.
  *
  * `?callback=`/`?selectionMode=`/`?showYearMonthList=`/`?memoPopup=0`/`?initialValue=`
+ *   3. **index 탭으로 열기**(메뉴 "업무 > 일정") — 부모가 index라 action()은
+ *      있지만 날짜 선택 결과를 받을 곳이 아니다. 그래서 탭일 때는(iframe에
+ *      data-tab-iframe이 있으면) 1번처럼 이 페이지 자신이 받아 버린다 —
+ *      안 그러면 날짜를 누를 때마다 index 콘솔에 "알 수 없는 pcmd" 경고가 남는다.
+ *
+ * [2026-11-14] 메뉴 화면으로도 쓰이므로 로그인 확인(Login::isAlive)을 넣었다.
+ *
+ * `?callback=`/`?selectionMode=`/`?showYearMonthList=`/`?memoPopup=0`/`?initialValue=`
  * 쿼리스트링으로 실제 콜백 이름/선택 모드/년월 리스트박스 여부/초기값을
  * 바꿔볼 수 있다. `selectionMode=range`일 때 `initialValue`는
  * `{"from":"...","to":"..."}` 형태의 JSON 문자열로 온다(`Calendar.open()`
@@ -29,6 +37,18 @@ declare(strict_types=1);
  * `sender`만 아래 JS가 `window.parent`로 판단해 전달한다(직렬화할 수
  * 없는 값이라 URL이 아니라 JS에서 판단 — 다른 entry들과 동일한 이유).
  */
+for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir = dirname($__bootDir)) {
+    if ($__bootDir === dirname($__bootDir)) {
+        throw new RuntimeException('프로젝트 루트(config/Path.php)를 찾을 수 없습니다.');
+    }
+}
+require_once $__bootDir . '/config/Path.php';
+unset($__bootDir);
+include_custom('Login');
+
+// 로그인이 안 살아있으면 여기서 login.php로 이동하고 끝난다.
+Login::isAlive();
+
 $callback = isset($_GET['callback']) && $_GET['callback'] !== '' ? (string) $_GET['callback'] : 'callback_달력';
 $selectionMode = isset($_GET['selectionMode']) && $_GET['selectionMode'] === 'range' ? 'range' : 'single';
 $showYearMonthList = isset($_GET['showYearMonthList']) && $_GET['showYearMonthList'] === '1';
@@ -128,18 +148,37 @@ $calendarJsVersion = filemtime(__DIR__ . '/Calendar.js');
     var popupSender = (window.parent && window.parent !== window && window.parent.Popup)
         ? window.parent.Popup.senderFor(window) : null;
     var hasRealParent = Boolean(window.parent && window.parent !== window && typeof window.parent.action === 'function');
+    // index 탭으로 열렸으면(메뉴 "업무 > 일정") 부모(index)는 날짜 선택 결과를 받는 곳이 아니다
+    // — 직접 열기와 같이 이 페이지 자신이 받는다(머리말 3번).
+    var inIndexTab = Boolean(window.frameElement && window.frameElement.hasAttribute('data-tab-iframe'));
     if (popupSender) {
         sender = popupSender;
-    } else if (hasRealParent) {
+    } else if (hasRealParent && !inIndexTab) {
         sender = window.parent;
     }
 
     var callbackName = <?= json_encode($callback) ?>;
 
-    // 직접 열렸을 때만 호출되는 로컬 진입점(Popup으로 열렸을 때는
-    // sender가 진짜 부모라 이 함수 자체가 안 불린다). 로그 영역을
-    // 없앴으므로 받기만 하고 아무것도 하지 않는다.
-    window.action = function () {};
+    // 이 페이지의 action — 두 가지를 받는다.
+    //  - 날짜 선택 결과(callback): 직접 열렸거나 index 탭일 때만 여기로 온다. 받기만 하고 아무것도 안 한다.
+    //  - 'requery': index 탭(메뉴 "업무 > 일정")으로 다시 돌아올 때 index가 부른다. 지금 보이는 달의
+    //    메모를 서버에서 다시 읽는다(다른 곳에서 바꾼 일정이 보이게). 단 메모 팝업이 열려 있으면
+    //    건너뛴다 — 다시 그리면 팝업이 닫혀 쓰던 메모가 사라진다(Calendar.isMemoPopupOpen).
+    window.action = function (pcmd, pparams, psender) {
+        var cal;
+
+        if (pcmd !== 'requery') {
+            return;
+        }
+        cal = Calendar.instance('calendar-root');
+        if (cal === null) {
+            return;
+        }
+        if (cal.isMemoPopupOpen()) {
+            return;
+        }
+        cal.action('show', { year: cal.viewYear, month: cal.viewMonth }, window);
+    };
 
     new Calendar({
         containerId: 'calendar-root',

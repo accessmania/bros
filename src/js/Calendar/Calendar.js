@@ -457,6 +457,15 @@ class Calendar {
         this._popupCode = null;
     }
 
+    /**
+     * [2026-11-14 추가] 메모 팝업이 지금 열려 있는지. 화면이 메모를 다시 읽기(action('show')) 전에
+     * 확인하는 데 쓴다 — 다시 읽으면 _render()가 팝업을 닫아 쓰던 메모가 사라지기 때문이다
+     * (Calendar_entry.php의 requery 참고). memoPopup이 꺼져 있으면 늘 false.
+     */
+    isMemoPopupOpen() {
+        return Boolean(this.popupEl && !this.popupEl.hidden);
+    }
+
     /** 등록된 인스턴스를 id로 조회한다(AGGrid.instance()와 동일 패턴). */
     static instance(id) {
         return Calendar.instances[id] || null;

@@ -79,6 +79,9 @@ function getauth(pcode) {
  * 제목만 바꾸고 싶을 때 탭키를 준다(예: 키 '문의확인', 제목 '문의 (15077)').
  * 탭 화면에서는 parent.setContent(...) 또는
  * action('setContent', {psrc, ptitle, pkey})로 부른다. 성공하면 탭 id, 실패하면 null.
+ * 이렇게 연(cyan) 탭은 탭바에서 항상 호출 탭(부를 때의 활성 탭) 바로 오른쪽에 그린다 —
+ * 이미 있는 탭을 다른 탭에서 다시 부르면 그 탭 오른쪽으로 옮겨 간다. 닫으면 호출 탭으로
+ * 돌아간다(orderedTabs / _setTabCaller / _closeTab).
  */
 /**
  * menu.js에 없는 화면(setContent로 연 탭, tab.offMenu)의 탭 색 — cyan.
@@ -662,6 +665,8 @@ function amaniaShell() {
       // 연 탭(메뉴 탭 포함)은 제목이 곧 키다.
       const key = pparams.pkey == null || String(pparams.pkey).trim() === '' ? title : String(pparams.pkey).trim();
       const existing = this.tabs.find(t => (t.key || t.title) === key);
+      // 호출 탭 = 지금 활성 탭(목록에서 더블클릭한 그 탭). 연 탭은 탭바에서 항상 그 오른쪽에 선다(orderedTabs).
+      const active = this.tabs.find(t => t.id === this.activeTab);
       if (existing) {
         if (existing.title !== title) {
           existing.title = title;
@@ -669,11 +674,12 @@ function amaniaShell() {
         if (existing.src !== src) {
           existing.src = src;
         }
+        // 다른 탭에서 다시 불렀으면 그 탭의 오른쪽으로 옮긴다.
+        this._setTabCaller(existing, active);
         this._selectTabMenu({ id: existing.id });
         return existing.id;
       }
 
-      const active = this.tabs.find(t => t.id === this.activeTab);
       let category = null;
       let group = null;
       if (active) {
@@ -683,10 +689,52 @@ function amaniaShell() {
       const id = 't' + Date.now() + Math.random().toString(36).slice(2, 6);
       // offMenu — menu.js에 없는 화면(setContent로 연 탭). 탭바가 cyan 색으로 구분해 그린다.
       // loading: 새 탭은 다 그려질 때까지 숨겨 둔다(_onTabFrameLoad / _tabReady).
-      this.tabs.push({ id, key, title, src, category, group, autoHideMenu: false, offMenu: true, loading: true });
+      // callerId: 이 탭을 연 탭(호출 탭) — 탭바에서 그 탭 바로 오른쪽에 그린다(orderedTabs).
+      this.tabs.push({ id, key, title, src, category, group, autoHideMenu: false, offMenu: true, loading: true, callerId: null });
+      this._setTabCaller(this.tabs[this.tabs.length - 1], active);
       this.activeTab = id;
       this._scheduleTabMenuAutoHide();
       return id;
+    },
+    /**
+     * setContent로 연 탭(ptab)의 호출 탭을 pcaller로 정한다. 탭바는 ptab을 항상 pcaller 바로
+     * 오른쪽에 그린다(orderedTabs). 바꾸지 않는 경우:
+     *  - pcaller가 없거나 ptab 자신일 때(탭 안에서 자기를 다시 부른 경우)
+     *  - pcaller가 ptab의 "자손"일 때(ptab → … → pcaller로 이어져 있으면 고리가 생긴다)
+     */
+    _setTabCaller(ptab, pcaller) {
+      if (!ptab || !pcaller || pcaller.id === ptab.id) return;
+      let cur = pcaller;
+      let guard = 0;
+      while (cur && cur.callerId && guard < 100) {
+        if (cur.callerId === ptab.id) return;
+        cur = this.tabs.find(t => t.id === cur.callerId);
+        guard++;
+      }
+      ptab.callerId = pcaller.id;
+    },
+    /**
+     * 탭바에 그릴 순서 — tabs 배열 순서를 바탕으로, setContent로 연 탭(callerId가 있는 탭)은
+     * 그 호출 탭 바로 오른쪽에 붙인다(호출 탭이 같은 탭이 여럿이면 연 순서대로, 그 탭이 또
+     * 연 탭은 다시 그 오른쪽에). 호출 탭이 닫혔으면 원래 자리(tabs 순서)에 그린다.
+     * tabs 배열 자체는 바꾸지 않는다 — 탭 iframe도 tabs로 그리므로 배열 순서를 바꾸면
+     * iframe이 DOM에서 옮겨지며 다시 로드될 수 있다. 그래서 탭 버튼줄만 이 순서로 그린다.
+     */
+    orderedTabs() {
+      const ids = new Set(this.tabs.map(t => t.id));
+      const isRoot = t => !t.callerId || !ids.has(t.callerId);
+      const result = [];
+      const placed = new Set();
+      const place = (tab) => {
+        if (placed.has(tab.id)) return;
+        placed.add(tab.id);
+        result.push(tab);
+        this.tabs.filter(c => c.callerId === tab.id).forEach(place);
+      };
+      this.tabs.filter(isRoot).forEach(place);
+      // 안전장치 — 혹시 빠진 탭(고리 등)이 있으면 끝에 붙인다.
+      this.tabs.forEach(t => { if (!placed.has(t.id)) result.push(t); });
+      return result;
     },
     /**
      * 탭이 옮겨질 때 그 탭의 iframe 안 페이지에 action('requery', {}, window)를
@@ -716,10 +764,13 @@ function amaniaShell() {
       if (this._fireEvent('onCloseMenu', closeParams) === false) {
         return;
       }
+      const closedCallerId = this.tabs[idx].callerId;
       this.tabs.splice(idx, 1);
       if (this.activeTab === pparams.id) {
         if (this.tabs.length) {
-          this.activeTab = this.tabs[Math.max(0, idx - 1)].id;
+          // setContent로 연 탭이면 호출 탭으로 돌아간다(아직 열려 있으면). 아니면 왼쪽 탭.
+          const callerTab = closedCallerId ? this.tabs.find(t => t.id === closedCallerId) : null;
+          this.activeTab = callerTab ? callerTab.id : this.tabs[Math.max(0, idx - 1)].id;
           // 닫혀서 옆 탭으로 넘어가면 그 화면을 다시 조회한다(예: 문의확인에서
           // 삭제/창닫기 → 문의 목록이 지운 문의 없이 다시 보이게).
           this._requeryTabIframe(this.activeTab);
@@ -1017,7 +1068,7 @@ function amaniaShell() {
                onTabDragEnd() { this.draggingId = null; },
              }"
              x-init="$nextTick(() => movePill())"
-             x-effect="activeTab; tabs.length; $nextTick(() => movePill())">
+             x-effect="activeTab; tabs.length; orderedTabs().map(t => t.id).join(); $nextTick(() => movePill())">
 
           <!-- 슬라이딩 필 배경 : 에메랄드 그라디언트 + 컬러 글로우로 선택 탭을 뚜렷하게 강조 -->
           <div class="absolute top-1.5 bottom-1.5 rounded-full
@@ -1027,7 +1078,8 @@ function amaniaShell() {
                       transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
                :style="`left: ${pillLeft}px; width: ${pillWidth}px; opacity: ${pillWidth ? 1 : 0};` + (tabs.some(t => t.id === activeTab && t.offMenu) ? OFF_MENU_PILL_STYLE : '')"></div>
 
-          <template x-for="tab in tabs" :key="tab.id">
+          <!-- 탭 버튼줄은 orderedTabs() 순서 — setContent로 연(cyan) 탭은 호출 탭 바로 오른쪽. -->
+          <template x-for="tab in orderedTabs()" :key="tab.id">
             <div :data-tab-btn="tab.id"
                  draggable="true"
                  @click="selectTabMenu(tab.id)"

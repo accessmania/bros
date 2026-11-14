@@ -43,6 +43,11 @@ unset($__bootDir);
 
 // SP.php가 DbContext.php를 대신 require해준다(decoItem_fetch.php와 동일 관례).
 require_once APP_BASE_DIR . '/src/Model/SP/SP.php';
+include_custom('Login');
+
+// 일정 메모를 읽고·저장하고·지우는 곳이라 로그인이 살아 있어야 한다(CLAUDE.md 1-1 —
+// 주소만 알면 누구나 부를 수 있다). 안 살아 있으면 login.php로 이동하고 끝난다.
+Login::isAlive();
 
 /**
  * cmd 이름 → 처리 함수 매핑표.

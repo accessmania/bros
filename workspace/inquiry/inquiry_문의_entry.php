@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 /**
  * [문의(t문의) AGGrid 화면 — 메뉴 "업무 > 문의"]
- * 구성: workspace/inquiry/의 inquiry_entry.php(이 파일, 화면 + 프론트 config)
- * + inquiry_fetch.php(CRUD). 기초자료형
+ * 구성: workspace/inquiry/의 inquiry_문의_entry.php(이 파일, 화면 + 프론트 config)
+ * + inquiry_문의_fetch.php(CRUD). 기초자료형
  * (src/js/aggrid/aggrid.md)과 같은 틀이되 다음이 다르다 — 바탕화면 문의.png 기준:
  *  - 컬럼은 그림 순서로 고정하고 code 계열 컬럼도 보인다(code는 읽기 전용).
  *  - 그림 위쪽의 토글단추(문의/문의내용/견적...)는 두지 않는다.
@@ -14,7 +14,7 @@ declare(strict_types=1);
  *    상태는 setExtraQuery({st})(?st=, 그 상태만)로 서버에 보낸다.
  *  - 상태 콤보의 원본자료는 Access의 Me.상태.RowSource =
  *    "SELECT tb상태_문의.상태 FROM tb상태_문의"와 같다(화면이 뜰 때 한 번 읽음).
- *  - 기본 정렬은 code 내림차순(inquiry_fetch.php).
+ *  - 기본 정렬은 code 내림차순(inquiry_문의_fetch.php).
  *  - 그리드 툴바의 "편집" 버튼은 빼고 그 자리에 "문의" 제목을 둔다
  *    (onToolbarRendered). 목록은 보기 전용이고, 신규/수정은 문의확인 화면
  *    (inquiryContent_entry.php)에서 한다 — 더블클릭/"+ 신규추가" 모두 "문의확인"
@@ -37,7 +37,7 @@ for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir
 }
 require_once $__bootDir . '/config/Path.php';
 unset($__bootDir);
-include_custom('DbContext', 'Crud', 'Login');
+include_custom('DbContext', 'Crud', 'Login', 'FieldVisible');
 
 // 로그인이 안 살아있으면 여기서 login.php로 이동하고 끝난다.
 Login::isAlive();
@@ -46,7 +46,7 @@ $connectionName = null; // config/db.php의 'driver' 기본 접속을 따른다
 $inquiryGridDb = new DbContext($connectionName);
 $tableName = 't문의';
 
-// 표시 필드 — 문의.png 순서. 배송주소/ts는 넣지 않는다. inquiry_fetch.php의
+// 표시 필드 — 문의.png 순서. 배송주소/ts는 넣지 않는다. inquiry_문의_fetch.php의
 // $inquiryFields와 같게 둔다(파일 하나 = 자기완결 원칙의 의도된 중복).
 $inquiryFields = [
     'code', '문의일자', '멤버code', '멤버', '상태',
@@ -76,8 +76,8 @@ function inquiry_data_type_for(string $sqlType): string
  * 상태 콤보의 원본자료 — Access의 Me.상태.RowSource =
  * "SELECT tb상태_문의.상태 FROM tb상태_문의"와 같고, 순서는 code 오름차순.
  * 화면이 뜰 때 한 번 읽어 오른쪽 위 상태 콤보(#iq-status)에 넣는다. 상태는
- * t문의에 글자 그대로 저장되므로 값과 표시가 같다. 레코드 그대로 넣으므로
- * 상태가 빈(NULL/'') 레코드도 빈 항목으로 들어간다 — 빈 항목을 고르면
+ * t문의에 글자 그대로 저장되므로 값과 표시가 같다. 콤보 맨 위에는 공란 하나를
+ * 늘 두고(HTML), 표의 빈(NULL/'') 레코드는 건너뛴다 — 공란을 고르면
  * 상태 조건 없이 전체를 조회한다. 테이블이 없거나 읽기에 실패해도
  * 화면은 뜨고 콤보만 비게 한다($statusError에 원인을 남긴다).
  */
@@ -109,11 +109,19 @@ foreach ($inquiryFields as $field) {
     $columns[] = $column;
 }
 
-$fetchUrl = APP_BASE_URL . '/workspace/inquiry/inquiry_fetch.php';
+/**
+ * 필드감추기(src/Auth/FieldVisible.md) — 이 계정 권한의 tfieldvisible 레코드 전부.
+ * JS의 IQ_FIELDVISIBLE로 넘기고, 그리드가 뜨면 Applyds(grid, '문의')가 숨긴다.
+ */
+$fieldVisible = FieldVisible::init($inquiryGridDb);
+
+$fetchUrl = APP_BASE_URL . '/workspace/inquiry/' . rawurlencode('inquiry_문의_fetch.php');
 
 // 브라우저 캐시로 옛 AGGrid.js가 보이지 않게 수정시각을 쿼리스트링에 붙인다.
 $aggridJsPath = APP_BASE_DIR . '/src/js/aggrid/AGGrid.js';
 $aggridJsVersion = is_file($aggridJsPath) ? filemtime($aggridJsPath) : time();
+$fieldVisibleJsPath = APP_BASE_DIR . '/src/Auth/FieldVisible.js';
+$fieldVisibleJsVersion = is_file($fieldVisibleJsPath) ? filemtime($fieldVisibleJsPath) : time();
 ?>
 <!doctype html>
 <html lang="ko">
@@ -123,6 +131,7 @@ $aggridJsVersion = is_file($aggridJsPath) ? filemtime($aggridJsPath) : time();
 <title>문의</title>
 <!-- document.currentScript로 vendor 경로를 찾으므로 async/defer 없이 동기 로드 -->
 <script src="<?= APP_BASE_URL ?>/src/js/aggrid/AGGrid.js?v=<?= $aggridJsVersion ?>"></script>
+<script src="<?= APP_BASE_URL ?>/src/Auth/FieldVisible.js?v=<?= $fieldVisibleJsVersion ?>"></script>
 <style>
 html, body { margin: 0; height: 100%; }
 body { padding: 16px; box-sizing: border-box; font-family: 'Segoe UI', Inter, system-ui, -apple-system, sans-serif; }
@@ -162,7 +171,10 @@ body { padding: 16px; box-sizing: border-box; font-family: 'Segoe UI', Inter, sy
          autocomplete="off" — 새로고침 때 브라우저가 직전 선택을 되살려 빈 칸이
          풀리지 않게 한다. -->
     <select id="iq-status" aria-label="상태" autocomplete="off">
+        <!-- 맨 위 공란 — 고르면 상태 조건 없이 전체를 조회한다. 상태 표에 빈 값이 있어도 공란은 이것 하나만 둔다. -->
+        <option value=""></option>
 <?php foreach ($statusOptions as $status): ?>
+<?php if ($status === '') { continue; } ?>
         <option value="<?= htmlspecialchars($status, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($status, ENT_QUOTES, 'UTF-8') ?></option>
 <?php endforeach; ?>
     </select>
@@ -178,6 +190,11 @@ var IQ_BAR = document.querySelector('.iq-bar');
 console.warn('tb상태_문의를 읽지 못해 상태 콤보가 비어 있습니다:', <?= json_encode($statusError, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>);
 <?php endif; ?>
 
+// 필드감추기 — {success, error, recs:[{tablename, fieldname, nickname, visiblefalse}]}.
+// 이 화면의 nickname은 '문의'(IQ_NICKNAME). Applyds(src/Auth/FieldVisible.js)가 쓴다.
+var IQ_FIELDVISIBLE = <?= json_encode($fieldVisible, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+var IQ_NICKNAME = '문의';
+
 new AGGrid({
     gridId: '문의',
     fetchUrl: <?= json_encode($fetchUrl, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
@@ -188,6 +205,10 @@ new AGGrid({
     autoFitBottomGap: 40,
     // 검색은 위 .iq-bar의 콤보/입력칸으로만 한다.
     showSearch: false,
+    // 그리드가 만들어지면 필드감추기를 적용한다.
+    onReady: function (grid) {
+        Applyds(grid, IQ_NICKNAME, IQ_FIELDVISIBLE);
+    },
     // 행 더블클릭 → selectRecord(그 행의 t문의.code). AGGrid는 읽기전용(view)
     // 모드에서만 이 콜백을 부른다(편집모드 더블클릭은 셀 편집).
     onRowDblClick: function (values) {

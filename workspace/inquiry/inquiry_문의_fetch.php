@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * [AGGrid 모듈용 CRUD 엔드포인트 — "문의"(t문의) 그리드 — 메뉴 "업무 > 문의"]
- * 구성: inquiry_entry.php(화면) + inquiry_fetch.php(이 파일). 서버 계약은
+ * 구성: inquiry_문의_entry.php(화면) + inquiry_문의_fetch.php(이 파일). 서버 계약은
  * 기초자료형과 같다(src/js/aggrid/aggrid.md "서버 계약"/"기초자료형").
  *
  * 기초자료형과 다른 점:
@@ -31,7 +31,7 @@ $connectionName = null; // config/db.php의 'driver' 기본 접속을 따른다
 $db = new DbContext($connectionName); // 이 요청의 DB 접속(처음 쓸 때 연결)
 $tableName = 't문의';
 
-// 표시 필드 — 문의.png 순서. inquiry_entry.php의 $inquiryFields와 같게 둔다
+// 표시 필드 — 문의.png 순서. inquiry_문의_entry.php의 $inquiryFields와 같게 둔다
 // (파일 하나 = 자기완결 원칙의 의도된 중복, aggrid.md "서버 구현 패턴" 참고).
 $inquiryFields = [
     'code', '문의일자', '멤버code', '멤버', '상태',
@@ -123,7 +123,7 @@ switch ($action) {
         $board->init($config->tableName, $config->columns, $config->searchFields, $keyword, '', null, null, 1, $extraCondition, $defaultOrderBy);
         $totalRows = $board->getTotalRows();
         $lastRow = ($board->getPage() * $board->getPageSize() >= $totalRows) ? $totalRows : -1;
-        // where — 이 rows를 조회할 때 실제로 쓴 WHERE(검색 확인용, inquiry_entry.php의 search()가 alert).
+        // where — 이 rows를 조회할 때 실제로 쓴 WHERE(검색 확인용, inquiry_문의_entry.php의 search()가 alert).
         echo json_encode([
             'rows' => inquiry_rows_for_client($board->getRows(), $displayFields),
             'lastRow' => $lastRow,

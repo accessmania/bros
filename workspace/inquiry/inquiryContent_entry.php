@@ -5,7 +5,7 @@ declare(strict_types=1);
  * [문의확인 화면 — 문의 한 건(?code=<t문의.code>)의 상세]
  * 구성: inquiryContent_entry.php(이 파일 — 입력폼 amd) + inquiryContent_fetch.php(CrudJs 계약)
  * + 탭마다 페이지 하나씩(inquiryContent_<탭>_entry.php / _fetch.php).
- * 메뉴에는 없고, 문의 목록(inquiry_entry.php)에서 행을 처음 더블클릭하면 index의
+ * 메뉴에는 없고, 문의 목록(inquiry_문의_entry.php)에서 행을 처음 더블클릭하면 index의
  * setContent()가 "문의확인" 탭으로 이 페이지를 연다.
  *
  * 화면 재사용 — 한 번 뜬 화면은 다시 열지 않는다. 이미 떠 있으면 목록의 더블클릭/신규추가는
@@ -52,6 +52,31 @@ declare(strict_types=1);
  *    → 'opened' / 'canceled' / 'unsupported'(아직 준비 전 — 부른 쪽이 새로 연다).
  *  - 'close' / 'selectRecord' / 'isDirty' — 버튼 iframe에 맡긴다.
  *  - 'setCustomer' {pcode, pname} / 'closeCustomerSearch' — 고객사 검색 팝업이 부른다.
+ *
+ * 목록 모드(?open=<종류>&detail=<그 종류의 code>) — 메뉴 목록에서 행을 더블클릭해 연다.
+ *  종류(IC_OPEN_KIND)와 띄우는 목록·팝업:
+ *    '문의내용' — inquiry_문의내용_entry.php(v문의내역) → 문의내역 팝업(inquiryContent_문의내용_amd.php)
+ *    '견적'     — inquiry_견적_entry.php(v문의_견적산출) → 견적 팝업(IC_SUB_POPUPS['견적'])
+ *    '수주'     — inquiry_수주_entry.php(v수주내역) → 수주 팝업(IC_SUB_POPUPS['수주'])
+ *    '발주'     — inquiry_발주_entry.php(v발주내역) → 발주 팝업(IC_SUB_POPUPS['발주'])
+ *    '선적미입고' — inquiry_선적미입고_entry.php(v선적미입고, 발주 행) → 발주 팝업
+ *    '납품출하대기' — inquiry_납품출하대기_entry.php(v납품출하대기, 수주 행) → 수주 팝업
+ *    '송금전체' / '원화송금관리' / '외화송금관리' (+ 송금B의 '송금B전체' / '원화송금관리B' / '외화송금관리B')
+ *               — inquiry_송금_entry.php?g=전체|원화|외화|B전체|B원화|B외화
+ *                 (v송금관리 + 고정·그룹 조건, 발주 행) → 발주 팝업
+ *    '미수금전체' / '미수금>0' / 'USD미수금>0'
+ *               — inquiry_미수금_entry.php?g=전체|원화|USD(v미수금관리 + 고정·그룹 조건, 수주 행) → 수주 팝업
+ *    '미수금B전체' / '미수금B>0' / 'USD미수금B>0'
+ *               — inquiry_미수금_entry.php?g=B전체|B원화|BUSD(위·아래 두 그리드, 자세히보기) → 수주 팝업
+ *  종류(IC_OPEN_KIND)는 탭 키·제목·돌아갈 목록에, 팝업(IC_OPEN_POPUP)은 띄울 amd에 쓴다
+ *  (PHP의 $openKinds 표). (open을 생략하고 detail만 주면 '문의내용'.)
+ *  - 같은 화면이지만 index 탭 키가 '<종류>확인'(IC_TAB_KEY — 예: '견적확인')이라 문의 목록의
+ *    "문의확인" 탭과도, 다른 종류의 탭과도 따로 뜬다.
+ *  - 탭 제목은 "<종류> (t문의.code)" — 괄호 안은 항상 문의 code. 열리면 그 종류의 팝업을 바로 띄운다.
+ *  - 'openInquiryDetail' {code: 문의 code, detail: 그 종류의 code} — 떠 있는 이 탭을 다른 행으로
+ *    덮어쓴다(icOpenInquiryDetail). 문의가 바뀌어도 그 종류의 팝업은 닫지 않고 새 행을 보여준다.
+ *    → 'opened' / 'canceled' / 'unsupported'(부른 쪽이 새로 연다).
+ *  - 삭제하면 그 종류의 메뉴 목록(메뉴 제목 = 종류)으로 돌아간다.
  */
 for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir = dirname($__bootDir)) {
     if ($__bootDir === dirname($__bootDir)) {
@@ -84,6 +109,41 @@ $code = isset($_GET['code']) ? trim((string) $_GET['code']) : '';
 // 같은 "문의확인" 탭을 새 code로 다시 연다(afterCrudSave).
 $isNew = $code === 'new';
 
+// ?open=<종류>&detail=<code> — 목록 모드(위 머리말 참고). 종류는 아래 목록에 있는 것만,
+// detail은 숫자만 받는다. 둘 중 하나라도 맞지 않으면 보통 문의확인으로 연다.
+// [종류 => 띄울 팝업]. 보통은 같고, 선적미입고는 발주 행이라 발주 팝업을,
+// 납품출하대기는 수주 행이라 수주 팝업을 띄운다.
+$openKinds = [
+    '문의내용'     => '문의내용',
+    '견적'         => '견적',
+    '수주'         => '수주',
+    '발주'         => '발주',
+    '선적미입고'   => '발주',
+    '납품출하대기' => '수주',
+    '송금전체'     => '발주',
+    '원화송금관리' => '발주',
+    '외화송금관리' => '발주',
+    '송금B전체'     => '발주',
+    '원화송금관리B' => '발주',
+    '외화송금관리B' => '발주',
+    '미수금전체'    => '수주',
+    '미수금>0'      => '수주',
+    'USD미수금>0'   => '수주',
+    '미수금B전체'   => '수주',
+    '미수금B>0'     => '수주',
+    'USD미수금B>0'  => '수주',
+];
+$openKind = isset($_GET['open']) ? trim((string) $_GET['open']) : '문의내용';
+$detailCode = isset($_GET['detail']) ? trim((string) $_GET['detail']) : '';
+if (!ctype_digit($detailCode) || !isset($openKinds[$openKind])) {
+    $openKind = '';
+    $detailCode = '';
+}
+$openPopup = '';
+if ($openKind !== '') {
+    $openPopup = $openKinds[$openKind];
+}
+
 $connectionName = null; // config/db.php의 'driver' 기본 접속을 따른다
 $db = new DbContext($connectionName);
 
@@ -105,7 +165,7 @@ if ($isNew) {
     }
 }
 
-// 상태 콤보 원본 — inquiry_entry.php와 같은 tb상태_문의(code 오름차순, 빈 레코드 포함).
+// 상태 콤보 원본 — inquiry_문의_entry.php와 같은 tb상태_문의(code 오름차순, 빈 레코드 포함).
 $statusOptions = [];
 try {
     $statusStmt = $db->pdo()->query('SELECT tb상태_문의.상태 FROM tb상태_문의 ORDER BY tb상태_문의.code ASC');
@@ -479,8 +539,25 @@ body {
 var icCode = <?= json_encode($code) ?>;
 // 신규 문의(code=new) — 아직 DB에 없다. 저장하면 insert된다.
 var icIsNew = <?= $isNew ? 'true' : 'false' ?>;
-// 다른 화면(문의 목록)이 이 화면을 찾을 때 쓰는 표시 — index의 탭키와 같다.
+// 목록 모드의 종류 — '문의내용' / '견적' / '수주' / '발주' / '선적미입고' / '납품출하대기', 보통 문의확인이면 ''.
+// 탭 키·탭 제목·돌아갈 목록에 쓴다. 머리말 "목록 모드" 참고.
+var IC_OPEN_KIND = <?= json_encode($openKind, JSON_UNESCAPED_UNICODE) ?>;
+// 그 종류가 띄우는 팝업 — '문의내용'이면 문의내역 팝업, 그 밖은 IC_SUB_POPUPS의 키.
+// 보통 IC_OPEN_KIND와 같고, 선적미입고·송금 메뉴는 '발주', 납품출하대기·미수금 메뉴는 '수주'(PHP의 $openKinds).
+var IC_OPEN_POPUP = <?= json_encode($openPopup, JSON_UNESCAPED_UNICODE) ?>;
+var IC_DETAIL_MODE = false;
+if (IC_OPEN_KIND !== '') {
+    IC_DETAIL_MODE = true;
+}
+// 다른 화면(문의 목록 / 문의내용·견적 목록)이 이 화면을 찾을 때 쓰는 표시 — index의 탭키와 같다.
 var IC_TAB_KEY = '문의확인';
+if (IC_DETAIL_MODE) {
+    IC_TAB_KEY = IC_OPEN_KIND + '확인';
+}
+// 목록 모드로 처음 열 때 팝업에 띄울 그 종류의 code(?detail=). 아니면 ''.
+var icDetailCode = <?= json_encode($detailCode) ?>;
+// openInquiryDetail로 문의를 바꾸는 동안 true — icApplyCode가 그 종류의 팝업을 닫지 않게 한다.
+var icKeepDetail = false;
 var IC_FETCH_URL = <?= json_encode($fetchUrl, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
 // 신규 문의의 기본값 — 문의일자는 오늘, 멤버는 로그인한 사람(저장 때 서버가 세션 값으로 다시 넣는다).
 var IC_TODAY = <?= json_encode(date('Y-m-d')) ?>;
@@ -719,6 +796,7 @@ function action(pcmd, pparams, psender) {
     switch (pcmd) {
         case 'requery':
         case 'openInquiry':
+        case 'openInquiryDetail':
         case 'subformReady':
             return action_screen(pcmd, pparams, psender);
 
@@ -774,6 +852,9 @@ function action_screen(pcmd, pparams, psender) {
     switch (pcmd) {
         case 'openInquiry':
             return icOpenInquiry(pparams.code);
+
+        case 'openInquiryDetail':
+            return icOpenInquiryDetail(pparams.code, pparams.detail);
 
         case 'subformReady':
             // 하위폼이 데이터를 그렸다(새 탭 준비 세기 — 이미 보냈으면 무시된다).
@@ -1396,13 +1477,18 @@ function icCloseSub(pkey) {
     icSubPopups[pkey].close();
 }
 
-/** 수주/발주/견적 팝업을 모두 닫는다 — 다른 문의/신규로 바뀔 때(icApplyCode). */
-function icCloseAllSubs() {
+/**
+ * 수주/발주/견적 팝업을 모두 닫는다 — 다른 문의/신규로 바뀔 때(icApplyCode).
+ * pexceptKey(탭 키)를 주면 그 팝업만 남긴다(목록 모드에서 덮어쓸 때). 없으면 ''.
+ */
+function icCloseAllSubs(pexceptKey) {
     var keys = Object.keys(IC_SUB_POPUPS);
     var i;
 
     for (i = 0; i < keys.length; i++) {
-        icCloseSub(keys[i]);
+        if (keys[i] !== pexceptKey) {
+            icCloseSub(keys[i]);
+        }
     }
 }
 
@@ -1679,6 +1765,49 @@ async function icOpenInquiry(pcode) {
 }
 
 /**
+ * 목록 모드 — 떠 있는 이 탭을 다른 행으로 덮어쓴다(action('openInquiryDetail')).
+ * pcode = 문의 code(그 행의 parentcode), pdetail = 그 종류(IC_OPEN_KIND)의 code.
+ *  1) 문의가 다르면 icOpenInquiry로 문의를 바꾼다. 그동안 icKeepDetail = true라 icApplyCode가
+ *     그 종류의 팝업을 닫지 않는다(닫는 중에 다시 여는 꼬임을 피한다). 취소되면 그대로 둔다.
+ *  2) 그 종류의 팝업에 pdetail을 보여준다(icOpenKindPopup — 저장 안 한 값이 있으면 팝업이 묻는다).
+ *  3) 탭 제목("문의내용 (t문의.code)")을 맞추고 이 탭으로 옮긴다.
+ * 돌려주는 값은 icOpenInquiry와 같다: 'opened' / 'canceled' / 'unsupported'.
+ */
+async function icOpenInquiryDetail(pcode, pdetail) {
+    var code = icText(pcode);
+    var detail = icText(pdetail);
+    var result;
+
+    if (code === '' || detail === '') {
+        return 'unsupported';
+    }
+
+    if (code !== icCode) {
+        icKeepDetail = true;
+        result = await icOpenInquiry(code);
+        icKeepDetail = false;
+        if (result !== 'opened') {
+            return result;
+        }
+    }
+
+    await icOpenKindPopup(detail);
+    icSetTabTitle(true);
+    return 'opened';
+}
+
+/**
+ * 목록 모드의 팝업(IC_OPEN_POPUP)에 pcode 행을 보여준다.
+ * '문의내용'이면 문의내역 팝업(icOpenDetail), 그 밖(견적/수주/발주)은 IC_SUB_POPUPS의 팝업(icOpenSub).
+ */
+function icOpenKindPopup(pcode) {
+    if (IC_OPEN_POPUP === '문의내용') {
+        return icOpenDetail(pcode);
+    }
+    return icOpenSub(IC_OPEN_POPUP, pcode);
+}
+
+/**
  * 화면을 문의 code(pcode, 신규면 'new')에 맞춘다 — 바뀐 게 없으면(같은 code) 아무것도 안 한다.
  *  - 신규: 하위폼 iframe과 talk을 숨긴다(지우지 않는다 — visible=false), 배경 흰색.
  *  - code: 하위폼을 다시 보이고 각자 action('setParent', {code})로 다시 읽게 한다
@@ -1697,9 +1826,18 @@ function icApplyCode(pcode) {
     icCode = code;
     icIsNew = (code === 'new');
 
-    // 문의내역/수주/발주/견적 팝업은 앞 문의의 것이라 닫는다.
-    icCloseDetail();
-    icCloseAllSubs();
+    // 문의내역/수주/발주/견적 팝업은 앞 문의의 것이라 닫는다. 단 목록 모드에서
+    // openInquiryDetail 중이면 그 종류의 팝업(IC_OPEN_POPUP)은 두고, 바로 뒤에 새 행을 보여준다.
+    if (icKeepDetail === true && IC_OPEN_POPUP === '문의내용') {
+        // 문의내역 팝업은 둔다.
+    } else {
+        icCloseDetail();
+    }
+    if (icKeepDetail === true) {
+        icCloseAllSubs(IC_OPEN_POPUP);
+    } else {
+        icCloseAllSubs('');
+    }
 
     if (icIsNew) {
         document.body.classList.add('ic-no-code');
@@ -1779,10 +1917,16 @@ function icSetTabTitle(pactivate) {
     var frame = window.frameElement;
     var tabId = null;
 
+    // 괄호 안은 항상 t문의.code(icCode). 목록 모드는 앞말만 그 종류('문의내용' / '견적').
+    var prefix = '문의';
+
+    if (IC_DETAIL_MODE) {
+        prefix = IC_OPEN_KIND;
+    }
     if (icIsNew) {
-        title = '문의(new)';
+        title = prefix + '(new)';
     } else {
-        title = '문의 (' + icCode + ')';
+        title = prefix + ' (' + icCode + ')';
     }
     document.title = title;
 
@@ -1800,8 +1944,14 @@ function icSetTabTitle(pactivate) {
  * 옮긴 뒤 닫아야 한다 — 닫으면 이 iframe이 없어져 뒤의 코드가 안 돈다.
  */
 function icGoToListAndClose() {
+    var listTitle = '문의';
+
+    // 목록 모드면 그 종류의 목록(메뉴 제목 = 종류)으로 돌아간다.
+    if (IC_DETAIL_MODE) {
+        listTitle = IC_OPEN_KIND;
+    }
     if (window.parent !== window && typeof window.parent.action === 'function') {
-        window.parent.action('selectLeftMenu', { title: '문의' }, window);
+        window.parent.action('selectLeftMenu', { title: listTitle }, window);
     }
     icCloseTab();
 }
@@ -1985,6 +2135,12 @@ function icInit() {
     }
     for (i = 0; i < topButtons.length; i++) {
         icBindTopTab(topButtons[i]);
+    }
+
+    // 목록 모드 — 열리자마자 그 종류의 팝업을 띄우고 탭 제목을 "<종류> (t문의.code)"로.
+    if (IC_DETAIL_MODE) {
+        icOpenKindPopup(icDetailCode);
+        icSetTabTitle(false);
     }
 }
 
