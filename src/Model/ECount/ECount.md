@@ -49,12 +49,16 @@ $ec->getLog();                          // 요청·응답 기록 [{url, request,
 |---|---|---|
 | `zone()` | `Command0_Click` | `Zone` |
 | `login()` | `Command5_Click` | `OAPILogin` (COM_CODE, USER_ID, API_CERT_KEY, ZONE, LAN_TYPE=ko-KR) |
-| `inventoryOne()` | `action단품` / `get단품` / `parse단품` | `InventoryBalance/ViewInventoryBalanceStatus` (기준일 오늘, 플래그 Y) |
+| `inventoryOne()` | `action단품` / `get단품` / `parse단품` | `InventoryBalance/ViewInventoryBalanceStatus` (기준일 오늘, 플래그 Y — 단 `SAFE_FLAG`는 N, 아래 주의) |
 | `inventoryAll()` | `action전체재고` / `get전체재고` / `parse전체재고` | `InventoryBalance/GetListInventoryBalanceStatus` (기준일 오늘, 플래그 N) |
 
 - **수량은 정수로 바꿔 넣는다**(`toIntQty`): 이카운트는 `'810.0000000000'`처럼 주는데 `tAPI_재고.수량`은 int라
   글자 그대로는 MSSQL 변환 오류가 난다(2026-11-13). 소수 부분이 실제로 있으면(예: 2.5) 잘라 넣지 않고 오류로 멈춘다 —
   그런 품목이 생기면 수량 열을 decimal로 바꾸고 `toIntQty`를 고친다.
+- **단품 조회의 `SAFE_FLAG`는 N**(2026-11-18): Access처럼 Y로 보내면, 재고가 있는 FLT012A0Z(전체재고 32개)도
+  `Status 200`, `Error null`, `TotalCnt 0`, `Result []`로 왔다 — 코드·통신은 정상이고 조건에 걸러진 것.
+  Y가 "안전재고 미달 품목만"으로 거르는 것으로 보고 N으로 바꿨다(이카운트 문서로 뜻을 확인하지는 못함 —
+  N으로도 안 나오면 다른 플래그를 의심한다). 단품 결과가 `null`이면 시험 화면의 응답에서 `TotalCnt`/`Result`를 먼저 본다.
 - **전체 재고 기록은 트랜잭션**: `DELETE` + `INSERT`를 묶는다. 받기·넣기가 중간에 실패하면 되돌려 예전 재고가 그대로 남는다(Access는 지운 뒤 실패하면 비거나 일부만 남았다).
 
 ## 원리 / Access와 다른 점

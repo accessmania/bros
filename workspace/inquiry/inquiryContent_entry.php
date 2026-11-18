@@ -787,6 +787,8 @@ function afterCrudSelectRecord(psender, ppara) {
 //   action_customer — setCustomer / closeCustomerSearch(고객사 검색 팝업)
 //   action_formula  — openFormula / closeFormula(수식 팝업 — 각 amd의 수식 버튼)
 //   action_ecount   — openEcountStock / closeEcountStock(ECount 전체재고 팝업 — 문의 탭의 ECount 버튼)
+//   action_freight  — openFreight / closeFreight(운임표 팝업 — 견적 amd의 운임표 버튼)
+//   action_modelHistory — openModelHistory / closeModelHistory(모델 이력 팝업 — 각 amd의 모델명 옆 빨간 ! 버튼)
 // ══════════════════════════════════════════════════════════════════
 function action(pcmd, pparams, psender) {
     if (!pparams) {
@@ -834,6 +836,14 @@ function action(pcmd, pparams, psender) {
         case 'openEcountStock':
         case 'closeEcountStock':
             return action_ecount(pcmd, pparams, psender);
+
+        case 'openFreight':
+        case 'closeFreight':
+            return action_freight(pcmd, pparams, psender);
+
+        case 'openModelHistory':
+        case 'closeModelHistory':
+            return action_modelHistory(pcmd, pparams, psender);
 
         default:
             console.warn('문의확인.action: 알 수 없는 pcmd - ' + pcmd);
@@ -988,6 +998,35 @@ function action_ecount(pcmd, pparams, psender) {
             return icOpenEcountStock();
         case 'closeEcountStock':
             return icCloseEcountStock();
+    }
+}
+
+/**
+ * 운임표 팝업(tb운임표, 편집 가능, 비모달·이동 가능) — 견적 amd의 운임표 버튼이 연다.
+ *  - openFreight: 팝업을 띄운다. 이미 떠 있으면 앞으로 가져오고 다시 읽는다(action('requery')).
+ *  - closeFreight: 팝업을 닫는다(팝업 안에서 Esc).
+ */
+function action_freight(pcmd, pparams, psender) {
+    switch (pcmd) {
+        case 'openFreight':
+            return icOpenFreight();
+        case 'closeFreight':
+            return icCloseFreight();
+    }
+}
+
+/**
+ * 모델 이력 팝업(inquiryContent_모델이력_entry.php, 비모달·이동 가능) — 각 amd의 모델명 옆 빨간 ! 버튼이 연다.
+ *  - openModelHistory {model, maker, kind}: 같은 모델명의 문의내용/수주/발주/견적(업체 관계없이). 제목 "모델명 (제조사)".
+ *    콤보는 kind(누른 amd의 종류)로 고른다. 이미 떠 있으면 앞으로 가져오고 그 모델명·종류로 바꾼다(action('showModel')).
+ *  - closeModelHistory: 팝업을 닫는다(팝업 안에서 Esc).
+ */
+function action_modelHistory(pcmd, pparams, psender) {
+    switch (pcmd) {
+        case 'openModelHistory':
+            return icOpenModelHistory(pparams.model, pparams.maker, pparams.kind);
+        case 'closeModelHistory':
+            return icCloseModelHistory();
     }
 }
 
@@ -1248,6 +1287,7 @@ function icOpenDetailNew() {
 
 /**
  * 문의내역 팝업을 띄우거나 재사용한다 — icOpenDetail / icOpenDetailNew가 같이 쓴다.
+ *  - 팝업이 떠 있으면 먼저 맨 앞으로 가져온다(bringToFront).
  *  - 팝업이 떠 있고 준비됐으면: 그 팝업의 action(pcmd, pparams).
  *  - 떠 있지만 아직 로드 중이면: 팝업 안 주소만 purl로 바꾼다.
  *  - 없으면: purl로 비모달 팝업을 화면 오른쪽에 새로 띄운다(제목 ptitle).
@@ -1256,6 +1296,8 @@ function icShowDetail(purl, ptitle, pcmd, pparams) {
     var win;
 
     if (icDetailPopup !== null) {
+        // 이미 떠 있으면 다른 팝업 뒤에 가려 있어도 맨 앞으로 가져온다.
+        icDetailPopup.bringToFront();
         win = icDetailWindow();
         if (win !== null) {
             return win.action(pcmd, pparams, window);
@@ -1386,6 +1428,7 @@ function icOpenSubNew(pkey) {
 
 /**
  * pkey 탭의 팝업을 띄우거나 재사용한다 — icOpenSub / icOpenSubNew가 같이 쓴다.
+ *  - 팝업이 떠 있으면 먼저 맨 앞으로 가져온다(bringToFront).
  *  - 팝업이 떠 있고 준비됐으면: 그 팝업의 action(pcmd, pparams).
  *  - 떠 있지만 아직 로드 중이면: 팝업 안 주소만 purl로 바꾼다.
  *  - 없으면: purl로 비모달 팝업을 화면 오른쪽에 새로 띄운다(제목 ptitle).
@@ -1395,6 +1438,8 @@ function icShowSub(pkey, purl, ptitle, pcmd, pparams) {
     var win;
 
     if (icSubPopups[pkey] !== null) {
+        // 이미 떠 있으면 다른 팝업 뒤에 가려 있어도 맨 앞으로 가져온다.
+        icSubPopups[pkey].bringToFront();
         win = icSubWindow(pkey);
         if (win !== null) {
             return win.action(pcmd, pparams, window);
@@ -1664,6 +1709,129 @@ function icOpenEcountStock() {
 function icCloseEcountStock() {
     if (icEcountStockPopup !== null) {
         icEcountStockPopup.close();
+    }
+}
+
+// ── 운임표 팝업(tb운임표, 편집 가능, 비모달·이동 가능) — 견적 amd의 운임표 버튼 ──
+var IC_FREIGHT_URL = encodeURIComponent('inquiryContent_운임표_entry.php');
+// 팝업 크기(px) — 화면이 작으면 화면에 맞춰 줄인다(icOpenFreight).
+var IC_FREIGHT_WIDTH = 846;
+var IC_FREIGHT_HEIGHT = 620;
+// 떠 있는 팝업(Popup) — 없으면 null. 팝업이 닫히면 onClose가 null로 되돌린다.
+var icFreightPopup = null;
+
+/** 운임표 팝업을 연다 — 이미 떠 있으면 앞으로 가져오고 다시 읽는다. 처리했으면 true. */
+function icOpenFreight() {
+    var width = IC_FREIGHT_WIDTH;
+    var height = IC_FREIGHT_HEIGHT;
+    var win = null;
+
+    if (icFreightPopup !== null) {
+        icFreightPopup.bringToFront();
+        if (icFreightPopup.iframeEl) {
+            win = icFreightPopup.iframeEl.contentWindow;
+        }
+        if (win && typeof win.action === 'function') {
+            win.action('requery', {}, window);
+        }
+        return true;
+    }
+
+    if (width > window.innerWidth - 40) {
+        width = window.innerWidth - 40;
+    }
+    if (height > window.innerHeight - 80) {
+        height = window.innerHeight - 80;
+    }
+    icFreightPopup = new Popup({
+        id: 'ic-freight',
+        title: '운임표',
+        modal: false,
+        draggable: true,
+        position: 'center',     // 화면 가운데에 띄운다(끌어서 옮길 수 있다)
+        iframeUrl: IC_FREIGHT_URL,
+        iframeWidth: width,
+        iframeHeight: height,
+        bodyPadding: 0,
+
+        onClose: function () {
+            icFreightPopup = null;
+        }
+    });
+    return true;
+}
+
+/** 운임표 팝업을 닫는다(팝업 안에서 Esc — action('closeFreight')). 없으면 아무것도 안 한다. */
+function icCloseFreight() {
+    if (icFreightPopup !== null) {
+        icFreightPopup.close();
+    }
+}
+
+// ── 모델 이력 팝업(비모달, 이동 가능) — 각 amd의 모델명 옆 빨간 ! 버튼(그림 느낌표.png) ──
+var IC_MODEL_HISTORY_URL = encodeURIComponent('inquiryContent_모델이력_entry.php');
+// 떠 있는 팝업(Popup) — 없으면 null. 팝업이 닫히면 onClose가 null로 되돌린다.
+var icModelHistoryPopup = null;
+
+/** 팝업 제목 — "모델명 (제조사)", 제조사가 없으면 모델명만. */
+function icModelHistoryTitle(pmodel, pmaker) {
+    if (icText(pmaker).trim() === '') {
+        return icText(pmodel).trim();
+    }
+    return icText(pmodel).trim() + ' (' + icText(pmaker).trim() + ')';
+}
+
+/**
+ * 모델 이력 팝업을 연다 — 같은 모델명의 문의내용/수주/발주/견적(업체 관계없이). 처리했으면 true.
+ * pkind(누른 amd의 종류 — 문의내용/수주/발주/견적)를 콤보의 처음 값으로 고른다. 없거나 모르는 값이면
+ * 팝업 화면이 문의내용으로 연다.
+ * 이미 떠 있으면 다시 열지 않고 맨 앞으로 가져와 제목·모델명·종류만 바꾼다.
+ * 크기는 화면에 맞춘다(업무 메뉴 화면의 그리드를 그대로 보이므로 넓게).
+ */
+function icOpenModelHistory(pmodel, pmaker, pkind) {
+    var model = icText(pmodel).trim();
+    var kind = icText(pkind).trim();
+    var title = icModelHistoryTitle(pmodel, pmaker);
+    var url = IC_MODEL_HISTORY_URL + '?model=' + encodeURIComponent(model) + '&kind=' + encodeURIComponent(kind);
+    var win = null;
+
+    if (icModelHistoryPopup !== null) {
+        icModelHistoryPopup.bringToFront();
+        icModelHistoryPopup.setCaption(title);
+        if (icModelHistoryPopup.iframeEl) {
+            win = icModelHistoryPopup.iframeEl.contentWindow;
+        }
+        if (win && typeof win.action === 'function') {
+            win.action('showModel', { model: model, kind: kind }, window);
+        } else {
+            // 아직 로드 중이면 주소만 바꾼다.
+            icModelHistoryPopup.iframeEl.src = url;
+        }
+        return true;
+    }
+
+    icModelHistoryPopup = new Popup({
+        id: 'ic-model-history',
+        title: title,
+        modal: false,
+        draggable: true,
+        position: 'center',     // 화면 가운데에 띄운다(끌어서 옮길 수 있다)
+        iframeUrl: url,
+        iframeWidth: Math.max(window.innerWidth - 40, 600),
+        iframeHeight: Math.max(window.innerHeight - 70, 300),
+        bodyPadding: 0,
+
+        onClose: function () {
+            icModelHistoryPopup = null;
+        }
+    });
+    return true;
+}
+
+/** 모델 이력 팝업을 닫는다(팝업 안에서 Esc — action('closeModelHistory')). 없으면 아무것도 안 한다. */
+function icCloseModelHistory() {
+    if (icModelHistoryPopup !== null) {
+        icModelHistoryPopup.close();
     }
 }
 

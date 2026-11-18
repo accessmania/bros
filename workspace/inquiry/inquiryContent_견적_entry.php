@@ -7,6 +7,7 @@ declare(strict_types=1);
  * 편집/페이저 없음. 그리드 위에 신규추가 버튼 — 부모의 action('addnew_견적')을 부른다(addNew →
  * 견적 팝업 inquiryContent_견적_amd.php를 신규로).
  * 조회는 inquiryContent_견적_fetch.php.
+ * 필드감추기: nickname '견적'(업무 메뉴 화면과 같다) — src/Auth/FieldVisible.md.
  *
  * 페이지 함수: requery() / action('requery') — 다시 불러온다.
  * 행 더블클릭 → 부모의 action('selectRecord_견적', {code}) — 견적 팝업(openQuote).
@@ -22,7 +23,7 @@ for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir
 }
 require_once $__bootDir . '/config/Path.php';
 unset($__bootDir);
-include_custom('DbContext', 'Crud', 'Login');
+include_custom('DbContext', 'Crud', 'Login', 'FieldVisible');
 
 // 로그인이 안 살아있으면 여기서 login.php로 이동하고 끝난다.
 Login::isAlive();
@@ -52,6 +53,12 @@ foreach ($probe->getSchema()['fields'] as $field => $info) {
 $fetchUrl = APP_BASE_URL . '/workspace/inquiry/' . rawurlencode('inquiryContent_견적_fetch.php') . '?code=' . rawurlencode($code);
 $aggridJsPath = APP_BASE_DIR . '/src/js/aggrid/AGGrid.js';
 $aggridJsVersion = is_file($aggridJsPath) ? filemtime($aggridJsPath) : time();
+
+// 필드감추기 — 이 계정 권한의 tfieldvisible 레코드 전부(src/Auth/FieldVisible.md).
+// 화면 이름(nickname)은 업무 메뉴의 같은 자료 화면과 같다: '견적'.
+$fieldVisible = FieldVisible::init(new DbContext(null));
+$fieldVisibleJsPath = APP_BASE_DIR . '/src/Auth/FieldVisible.js';
+$fieldVisibleJsVersion = is_file($fieldVisibleJsPath) ? filemtime($fieldVisibleJsPath) : time();
 ?>
 <!doctype html>
 <html lang="ko">
@@ -61,6 +68,7 @@ $aggridJsVersion = is_file($aggridJsPath) ? filemtime($aggridJsPath) : time();
 <title>견적</title>
 <!-- document.currentScript로 vendor 경로를 찾으므로 async/defer 없이 동기 로드 -->
 <script src="<?= APP_BASE_URL ?>/src/js/aggrid/AGGrid.js?v=<?= $aggridJsVersion ?>"></script>
+<script src="<?= APP_BASE_URL ?>/src/Auth/FieldVisible.js?v=<?= $fieldVisibleJsVersion ?>"></script>
 <style>
 html, body { margin: 0; height: 100%; overflow: hidden; }
 body { padding: 10px; box-sizing: border-box; font-family: 'Malgun Gothic', 'Segoe UI', system-ui, sans-serif; font-size: 13px; color: #1e293b; }
@@ -82,12 +90,19 @@ body { padding: 10px; box-sizing: border-box; font-family: 'Malgun Gothic', 'Seg
 </div>
 <div id="aggrid-<?= $gridId ?>"></div>
 <script>
+// 필드감추기 — {success, error, recs}. 이 탭의 nickname은 '견적'(업무 메뉴 화면과 같다).
+var IC_TAB_FIELDVISIBLE = <?= json_encode($fieldVisible, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+var IC_TAB_NICKNAME = '견적';
+
 // 몇 건뿐이라 페이저 없이 한 번에 받고(fetchMode 'all'), 높이는 iframe 바닥까지 채운다.
 new AGGrid({
     gridId: <?= json_encode($gridId, JSON_UNESCAPED_UNICODE) ?>,
     fetchUrl: <?= json_encode($fetchUrl, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
     primaryKey: 'code',
     fetchMode: 'all',
+    onReady: function (pgrid) {
+        Applyds(pgrid, IC_TAB_NICKNAME, IC_TAB_FIELDVISIBLE);
+    },
     autoFitBottomGap: 10,
     minHeight: 120,
     showSearch: false,

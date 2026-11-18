@@ -267,6 +267,10 @@ body {
 }
 .amd-form label { white-space: nowrap; }
 .amd-wide { grid-column: 2 / 5; }
+/* 모델명 줄 — 모델명 칸(버튼 폭만큼 좁아진다) + 빨간 ! 버튼(준비 중). */
+.amd-model-row { display: flex; gap: 2px; min-width: 0; }
+.amd-form .amd-model-row input { flex: 1 1 0; min-width: 0; }
+.amd-alert-btn { width: 25px; padding: 0; flex: none; color: #dc2626; font-weight: 700; }
 .amd-red { color: #dc2626; }
 .amd-blue { color: #2563eb; }
 
@@ -324,7 +328,10 @@ button:disabled { color: #9ca3af; cursor: default; }
     <?= amd_text_input($schemaFields, '제품종류') ?>
 
     <?= amd_label('모델명', '모델명') ?>
-    <?= amd_text_input($schemaFields, '모델명') ?>
+    <div class="amd-model-row">
+        <?= amd_text_input($schemaFields, '모델명') ?>
+        <button type="button" class="amd-alert-btn" id="amd-model-alert" title="같은 모델명의 문의내용/수주/발주/견적">!</button>
+    </div>
     <?= amd_label('품목코드', '품목코드') ?>
     <?= amd_text_input($schemaFields, '품목코드') ?>
 
@@ -630,6 +637,26 @@ function amdEnsureOption(pid, pvalue) {
         }
     }
     el.add(new Option(value, value));
+}
+
+/**
+ * 모델명 옆 빨간 ! 버튼 — 같은 모델명의 문의내용/수주/발주/견적(업체 관계없이)을 띄운 쪽(문의확인)의
+ * 모델 이력 팝업으로 연다(action('openModelHistory', {model, maker}) — 제목 "모델명 (제조사)").
+ */
+function amdModelAlert() {
+    var model = amdTrim(document.getElementById('모델명').value);
+    var maker = amdTrim(document.getElementById('제조사').value);
+
+    if (model === '') {
+        amdMessage('모델명이 없습니다.', true);
+        return;
+    }
+    if (window.parent === window || typeof window.parent.action !== 'function') {
+        amdMessage('문의확인 화면에서 열었을 때만 볼 수 있습니다.', true);
+        return;
+    }
+    // kind = 이 amd의 종류 — 팝업 콤보가 처음에 이 종류를 고른다.
+    window.parent.action('openModelHistory', { model: model, maker: maker, kind: '발주' }, window);
 }
 
 function amdMessage(ptext, pisError) {
@@ -994,6 +1021,8 @@ function amdInit() {
 
     // 준비 중인 버튼 — 누르면 안내만(지금은 없음).
     document.getElementById('amd-formula').addEventListener('click', amdOpenFormula);
+    // 모델명 옆 빨간 ! 버튼 — 같은 모델명의 이력(모델 이력 팝업).
+    document.getElementById('amd-model-alert').addEventListener('click', amdModelAlert);
 
     // 재계산 버튼 = calc()(수식 적용), 빨간 레이블 칸을 바꾸면 calc().
     document.getElementById('amd-recalc').addEventListener('click', calc);

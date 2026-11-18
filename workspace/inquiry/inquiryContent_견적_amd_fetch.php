@@ -48,7 +48,8 @@ const RECORD_FIELDS = [
     '제품종류', '품목코드', '모델명', '제품code', '제조사',
     '상태', '견적날짜', '수량', 'MOQ', '중량', '총중량', '실중량KG', '부피중량', 'Zone', '중량코드',
     '화물배율', 'KG배율', '운임비율', '유류할증요율', '은행수수료', '관세', '승수',
-    'StandardPrice', 'DistiPrice', '할인률', '적용환율', '견적환율', '원화구매가', '원화원가', '달러원가',
+    'StandardPrice1', 'StandardPrice2', 'StandardPrice', 'DistiPrice1', 'DistiPrice2', 'DistiPrice',
+    '할인률', '적용환율', '견적환율', '원화구매가', '원화원가', '달러원가',
     'DHL단가', '개별운송비', '중량단가', '중량화물비용', '예상단가', '예상USD', '견적단가', 'USD단가',
     '비고',
 ];
@@ -58,7 +59,8 @@ const NUMBER_FIELDS = [
     '제품code',
     '수량', 'MOQ', '중량', '총중량', '실중량KG', '부피중량',
     '화물배율', 'KG배율', '운임비율', '유류할증요율', '은행수수료', '관세', '승수',
-    'StandardPrice', 'DistiPrice', '할인률', '적용환율', '견적환율', '원화구매가', '원화원가', '달러원가',
+    'StandardPrice1', 'StandardPrice2', 'StandardPrice', 'DistiPrice1', 'DistiPrice2', 'DistiPrice',
+    '할인률', '적용환율', '견적환율', '원화구매가', '원화원가', '달러원가',
     'DHL단가', '개별운송비', '중량단가', '중량화물비용', '예상단가', '예상USD', '견적단가', 'USD단가',
 ];
 

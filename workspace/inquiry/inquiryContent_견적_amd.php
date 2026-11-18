@@ -29,6 +29,9 @@ declare(strict_types=1);
  *  - 검색(문의내용code) + 문의보기 + 재계산/운임표/수식 — 문의code(t문의내역.code)로 Enter/AfterUpdate면
  *    제품종류/품목코드/모델명/제품code/제조사를 채운다(AMD_DETAIL_MAP). 문의보기는 문의내역 팝업.
  *  - 위 구역: 모델명/품목코드, 제품종류, 제조사, ECount 버튼 — 아래 구분선
+ *  - StandardPrice / DistiPrice 줄은 칸 3개(그림 견적AMD.png, 2026-11-18): [1][2][합계].
+ *    1·2(빨간 테두리)를 바꾸면 calc — 수식보다 먼저 합계 = 1 + 2(빈 값은 0, 둘 다 비면 합계 그대로)(amdApplySums).
+ *    합계 칸(파란 테두리)은 읽기 전용.
  *  - 왼쪽: 상태/견적날짜/수량/Zone(콤보)/중량/StandardPrice/DistiPrice/할인률/원화구매가/DHL단가/
  *          총중량/중량코드/실중량KG/부피중량/화물배율/중량화물비용
  *    오른쪽: 견적환율/적용환율/유류할증요율/관세/승수/개별운송비/운임비율/원화원가/예상단가/견적단가/
@@ -37,7 +40,7 @@ declare(strict_types=1);
  *  (그림에 없는 MOQ, KG배율, 은행수수료, 중량단가 칸은 뺐다 — fetch 필드 목록에는 남아 있어 값은 그대로다.)
  *  폼은 그리드 하나이고 창 높이에서 남는 만큼 줄 사이에 고르게 나눈다(발주 amd와 같음).
  *
- * 운임표는 다음 단계. ECount 버튼은 품목코드의 이카운트 재고를 버튼 옆에 보인다(amdEcountStock). 수식은 문의확인의 수식 팝업(action('openFormula')). 재계산은 calc() — 폼 값을 inquiryContent_calcFormula_fetch.php에 보내 tb수식_견적를 순서대로 계산하고 결과를 칸에 넣는다(빨간 레이블 칸을 바꿔도 calc). 저장은 저장 버튼. t문의_견적산출에 없는 필드의 칸은 비활성으로 두고 저장하지 않는다.
+ * 운임표는 문의확인의 운임표 팝업(action('openFreight') — tb운임표, 편집 버튼으로 고칠 수 있음, 중량코드 오름차순). ECount 버튼은 품목코드의 이카운트 재고를 버튼 옆에 보인다(amdEcountStock). 수식은 문의확인의 수식 팝업(action('openFormula')). 재계산은 calc() — 폼 값을 inquiryContent_calcFormula_fetch.php에 보내 tb수식_견적를 순서대로 계산하고 결과를 칸에 넣는다(빨간 레이블 칸을 바꿔도 calc). 저장은 저장 버튼. t문의_견적산출에 없는 필드의 칸은 비활성으로 두고 저장하지 않는다.
  *
  * 페이지 함수: action(pcmd, pparams, psender) — 종류별 action_xxx로 나눠 넘긴다.
  *  - 'requery' — 다시 읽는다(저장 안 한 값이 있으면 건너뛴다).
@@ -168,8 +171,8 @@ $leftFields = [
     ['수량', '수량', 'red', 'num'],
     ['Zone', 'Zone', 'red', 'combo'],
     ['중량', '중량', 'red', 'num'],
-    ['StandardPrice', 'StandardPrice', 'red', 'num'],
-    ['DistiPrice', 'DistiPrice', 'red', 'num'],
+    ['StandardPrice', 'StandardPrice', 'red', 'sum'],   // 칸 3개: StandardPrice1 + StandardPrice2 = StandardPrice
+    ['DistiPrice', 'DistiPrice', 'red', 'sum'],         // 칸 3개: DistiPrice1 + DistiPrice2 = DistiPrice
     ['할인률', '할인률', 'blue', 'num'],
     ['원화구매가', '원화구매가', 'blue', 'num'],
     ['DHL단가', 'DHL단가', 'blue', 'num'],
@@ -196,6 +199,20 @@ $rightFields = [
     ['USD단가', 'USD단가', '', 'num'],
 ];
 
+/**
+ * 합계 칸 한 줄 — [필드1][필드2][필드](그림 견적AMD.png). 1·2는 빨간 테두리(입력, 바꾸면 calc),
+ * 마지막은 파란 테두리(읽기 전용 — calc가 수식보다 먼저 1 + 2를 넣는다, JS의 amdApplySums).
+ * id는 각각 필드명(CrudJs 바인딩) — 예: StandardPrice1, StandardPrice2, StandardPrice.
+ */
+function amd_sum_input(array $schemaFields, string $field): string
+{
+    return '<div class="amd-sum">'
+        . amd_text_input($schemaFields, $field . '1', 'amd-num amd-sum-part')
+        . amd_text_input($schemaFields, $field . '2', 'amd-num amd-sum-part')
+        . str_replace('<input ', '<input readonly tabindex="-1" ', amd_text_input($schemaFields, $field, 'amd-num amd-sum-total'))
+        . '</div>';
+}
+
 /** 두 줄 칸의 라벨 하나 — null이면 빈 칸. */
 function amd_pair_label(?array $item): string
 {
@@ -215,6 +232,8 @@ function amd_pair_control(array $schemaFields, ?array $item, array $comboOptions
     switch ($item[3]) {
         case 'num':
             return amd_number_input($schemaFields, $field);
+        case 'sum':
+            return amd_sum_input($schemaFields, $field);
         case 'date':
             return amd_date_input($schemaFields, $field);
         case 'combo':
@@ -268,12 +287,23 @@ body {
 .amd-form input:disabled, .amd-form select:disabled { background: #e5e7eb; cursor: not-allowed; }
 .amd-form input:focus, .amd-form select:focus { outline: none; border-color: #3b82f6; }
 .amd-form .amd-num { text-align: right; }
+/* 합계 칸 한 줄 — [1][2][합계]를 같은 폭으로. 1·2는 빨간 테두리(입력), 합계는 파란 테두리(읽기 전용). */
+.amd-sum { display: flex; gap: 2px; min-width: 0; }
+.amd-form .amd-sum input { flex: 1 1 0; min-width: 0; padding: 0 3px; }
+.amd-form .amd-sum .amd-sum-part { border-color: #dc2626; }
+.amd-form .amd-sum .amd-sum-total { border-color: #2563eb; }
 .amd-form .amd-date { text-align: center; }
+/* 가운데 정렬 칸(2026-11-18) — 숫자 칸(.amd-num 오른쪽)보다 우선하도록 id로 지정. 칸 id = 필드명. */
+.amd-form #수량, .amd-form #중량, .amd-form #중량코드 { text-align: center; }
 /* 날짜 칸이 비었으면(null) "연도-월-일" 안내 글자를 숨긴다. 칸에 들어가면(focus) 다시 보여 입력할 수 있다.
    amd-date-empty는 JS(amdMarkEmptyDates)가 붙인다. ::-webkit-datetime-edit는 크롬/엣지 전용. */
 .amd-date.amd-date-empty:not(:focus)::-webkit-datetime-edit { color: transparent; }
 .amd-form select { text-align: center; }
 .amd-wide { grid-column: 2 / 5; }
+/* 모델명 줄 — 모델명 칸(버튼 폭만큼 좁아진다) + 빨간 ! 버튼(준비 중). */
+.amd-model-row { display: flex; gap: 2px; min-width: 0; }
+.amd-form .amd-model-row input { flex: 1 1 0; min-width: 0; }
+.amd-alert-btn { width: 25px; padding: 0; flex: none; color: #dc2626; font-weight: 700; }
 .amd-red { color: #dc2626; }
 .amd-blue { color: #2563eb; }
 
@@ -331,7 +361,10 @@ button:disabled { color: #9ca3af; cursor: default; }
 
     <!-- 위 구역: 모델명/품목코드, 제품종류, 제조사, ECount -->
     <?= amd_label('모델명', '모델명') ?>
-    <?= amd_text_input($schemaFields, '모델명') ?>
+    <div class="amd-model-row">
+        <?= amd_text_input($schemaFields, '모델명') ?>
+        <button type="button" class="amd-alert-btn" id="amd-model-alert" title="같은 모델명의 문의내용/수주/발주/견적">!</button>
+    </div>
     <?= amd_label('품목코드', '품목코드') ?>
     <?= amd_text_input($schemaFields, '품목코드') ?>
 
@@ -387,6 +420,11 @@ var AMD_NUMBER_DECIMALS = { '수량': 0, 'MOQ': 0 };
 // "검색(문의내용code)"로 가져온 문의내역의 제품 정보를 넣는 칸 — fetch가 t문의_견적산출 필드 이름으로 보낸다.
 // (t문의내역.제품code → 제품code. inquiryContent_견적_amd_fetch.php의 DETAIL_MAP과 같아야 한다.)
 var AMD_DETAIL_MAP = ['제품종류', '품목코드', '모델명', '제품code', '제조사'];
+// 합계 칸 — [합계 필드, 더할 필드1, 더할 필드2]. calc가 수식보다 먼저 1 + 2를 합계에 넣는다(amdApplySums).
+var AMD_SUMS = [
+    ['StandardPrice', 'StandardPrice1', 'StandardPrice2'],
+    ['DistiPrice', 'DistiPrice1', 'DistiPrice2']
+];
 // 마지막으로 찾은 문의code — Enter로 찾은 뒤 칸을 떠날 때(change) 같은 찾기를 또 하지 않게.
 var amdLastDetailCode = null;
 // crudbuttons(psender) — 이벤트가 처음 불릴 때 담아 둔다. 이벤트 밖(문의code 찾기)에서
@@ -640,6 +678,26 @@ function amdEnsureOption(pid, pvalue) {
     el.add(new Option(value, value));
 }
 
+/**
+ * 모델명 옆 빨간 ! 버튼 — 같은 모델명의 문의내용/수주/발주/견적(업체 관계없이)을 띄운 쪽(문의확인)의
+ * 모델 이력 팝업으로 연다(action('openModelHistory', {model, maker}) — 제목 "모델명 (제조사)").
+ */
+function amdModelAlert() {
+    var model = amdTrim(document.getElementById('모델명').value);
+    var maker = amdTrim(document.getElementById('제조사').value);
+
+    if (model === '') {
+        amdMessage('모델명이 없습니다.', true);
+        return;
+    }
+    if (window.parent === window || typeof window.parent.action !== 'function') {
+        amdMessage('문의확인 화면에서 열었을 때만 볼 수 있습니다.', true);
+        return;
+    }
+    // kind = 이 amd의 종류 — 팝업 콤보가 처음에 이 종류를 고른다.
+    window.parent.action('openModelHistory', { model: model, maker: maker, kind: '견적' }, window);
+}
+
 function amdMessage(ptext, pisError) {
     var el = document.getElementById('amd-message');
 
@@ -815,7 +873,21 @@ function amdOpenFormula() {
 }
 
 /**
- * calc() — 수식 적용(재계산 버튼, 빨간 레이블 칸의 값 변경이 부른다).
+ * 운임표 버튼 — tb운임표(inquiryContent_운임표_entry.php)를 띄운 쪽(문의확인)에 맡겨 연다
+ * (action('openFreight') — amd 팝업 안이 아니라 문의확인 화면의 팝업).
+ */
+function amdOpenFreight() {
+    if (window.parent === window || typeof window.parent.action !== 'function') {
+        amdMessage('문의확인 화면에서 열었을 때만 볼 수 있습니다.', true);
+        return;
+    }
+    window.parent.action('openFreight', {}, window);
+}
+
+/**
+ * calc() — 수식 적용(재계산 버튼, 빨간 레이블 칸·빨간 테두리 칸의 값 변경이 부른다).
+ *  0. 수식보다 먼저 합계 칸을 채운다 — StandardPrice = StandardPrice1 + StandardPrice2,
+ *     DistiPrice = DistiPrice1 + DistiPrice2(amdApplySums). 그래서 수식은 새 합계로 계산한다.
  *  1. 지금 폼 값 전부를 계산 창구(inquiryContent_calcFormula_fetch.php?kind=견적)에 보낸다.
  *  2. 서버가 tb수식_견적를 순서대로 계산해 {success, results: {필드명: 결과}}를 돌려준다.
  *  3. results의 값을 폼 칸에 넣는다(CrudJs setValue — 저장은 하지 않는다. 저장 버튼으로 저장).
@@ -843,6 +915,9 @@ async function calc() {
     }
     amdCalcSeq = amdCalcSeq + 1;
     seq = amdCalcSeq;
+
+    // 0. 수식 전에 합계 칸 — StandardPrice = StandardPrice1 + StandardPrice2 등(amdApplySums).
+    amdApplySums();
 
     // 1. 폼 값 전부 — getValue는 화면 값을 먼저 흡수한다(숫자 칸의 콤마도 뗀다).
     crud = amdSender.getCrud();
@@ -902,21 +977,78 @@ async function calc() {
     return true;
 }
 
+/** 칸 값을 숫자로 — 빈 값(null)·숫자가 아닌 값은 0(콤마는 뗀다). */
+function amdNumberOrZero(pvalue) {
+    var raw = amdTrim(pvalue).replace(/,/g, '');
+    var n;
+
+    if (raw === '') {
+        return 0;
+    }
+    n = Number(raw);
+    if (isNaN(n)) {
+        return 0;
+    }
+    return n;
+}
+
 /**
- * 빨간 레이블의 칸(레이블 class amd-red의 for)은 사용자가 값을 바꾸고 칸을 떠나면
- * (change — Access AfterUpdate) calc()를 부른다.
+ * 합계 칸 채우기(AMD_SUMS) — 합계 = 필드1 + 필드2, 빈 값(null)은 0으로 본다.
+ * 단 1·2가 둘 다 비어 있으면 합계는 건드리지 않는다 — 1·2가 생기기 전의 옛 견적(합계만 있음)이
+ * 재계산으로 0이 되지 않게(2026-11-18 결정).
+ * 소수 더하기 오차(0.1 + 0.2 = 0.30000000000000004)는 소수 10자리에서 반올림해 없앤다.
+ * 폼(t문의_견적산출)에 없는 필드가 섞이면 그 줄은 건너뛴다.
+ */
+function amdApplySums() {
+    var crud;
+    var fields;
+    var a;
+    var b;
+    var total;
+    var i;
+
+    if (amdSender === null || amdSender.getCrud() === null) {
+        return;
+    }
+    crud = amdSender.getCrud();
+    fields = crud.schema.fields;
+    for (i = 0; i < AMD_SUMS.length; i++) {
+        if (!fields[AMD_SUMS[i][0]] || !fields[AMD_SUMS[i][1]] || !fields[AMD_SUMS[i][2]]) {
+            continue;
+        }
+        a = crud.getValue(AMD_SUMS[i][1]);
+        b = crud.getValue(AMD_SUMS[i][2]);
+        if (amdTrim(a) === '' && amdTrim(b) === '') {
+            continue;
+        }
+        total = amdNumberOrZero(a) + amdNumberOrZero(b);
+        total = Math.round(total * 10000000000) / 10000000000;
+        amdSetField(AMD_SUMS[i][0], total);
+    }
+}
+
+/**
+ * 빨간 레이블의 칸(레이블 class amd-red의 for)과 빨간 테두리 칸(합계 줄의 1·2, class amd-sum-part)은
+ * 사용자가 값을 바꾸고 칸을 떠나면 (change — Access AfterUpdate) calc()를 부른다.
  * 스크립트로 넣은 값(calc 결과, 레코드 열기)은 change가 생기지 않으므로 calc가 되풀이되지 않는다.
  * 빨간 레이블을 더하거나 빼면 화면의 필드 목록(색)만 고치면 된다(여기서 레이블을 찾는다).
  */
 function amdBindCalcTriggers() {
     var labels = document.querySelectorAll('#amd-form label.amd-red');
+    var parts = document.querySelectorAll('#amd-form .amd-sum-part');
     var el;
     var i;
 
     for (i = 0; i < labels.length; i++) {
         el = document.getElementById(labels[i].htmlFor);
-        if (el !== null && !el.disabled) {
+        // 합계 칸(읽기 전용)은 사용자가 바꿀 수 없어 건너뛴다 — 그 줄은 아래 1·2 칸이 calc를 부른다.
+        if (el !== null && !el.disabled && !el.readOnly) {
             el.addEventListener('change', calc);
+        }
+    }
+    for (i = 0; i < parts.length; i++) {
+        if (!parts[i].disabled) {
+            parts[i].addEventListener('change', calc);
         }
     }
 }
@@ -982,7 +1114,6 @@ function amdEcountShow(ptext, pisError) {
 // ── 시작 — 이벤트 연결 ──
 function amdInit() {
     var nums = document.querySelectorAll('#amd-form .amd-num');
-    var soon = ['amd-freight'];
     var i;
 
     for (i = 0; i < nums.length; i++) {
@@ -1000,8 +1131,11 @@ function amdInit() {
     document.getElementById('문의code').addEventListener('change', amdDetailCodeChanged);
     document.getElementById('amd-detail-open').addEventListener('click', amdOpenDetail);
 
-    // 운임표 — 다음 단계(지금은 안내만).
+    // 운임표 / 수식 — 문의확인 화면의 팝업으로 연다.
+    document.getElementById('amd-freight').addEventListener('click', amdOpenFreight);
     document.getElementById('amd-formula').addEventListener('click', amdOpenFormula);
+    // 모델명 옆 빨간 ! 버튼 — 같은 모델명의 이력(모델 이력 팝업).
+    document.getElementById('amd-model-alert').addEventListener('click', amdModelAlert);
 
     // 재계산 버튼 = calc()(수식 적용), 빨간 레이블 칸을 바꾸면 calc().
     document.getElementById('amd-recalc').addEventListener('click', calc);
@@ -1009,17 +1143,6 @@ function amdInit() {
 
     // ECount 버튼 = 품목코드의 이카운트 재고를 버튼 옆에.
     document.getElementById('amd-ecount').addEventListener('click', amdEcountStock);
-
-    for (i = 0; i < soon.length; i++) {
-        amdBindSoon(document.getElementById(soon[i]));
-    }
-}
-
-/** 준비 중인 버튼 하나 — 누르면 안내만 한다. */
-function amdBindSoon(pbutton) {
-    pbutton.addEventListener('click', function () {
-        amdMessage(pbutton.textContent.trim() + ' — 준비 중입니다.', false);
-    });
 }
 
 amdInit();

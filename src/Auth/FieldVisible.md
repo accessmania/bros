@@ -58,3 +58,12 @@ fetch가 응답에서 그 필드를 빼야 한다(추가 예정).
 | `workspace/inquiry/inquiry_송금_entry.php` (송금전체·원화송금관리·외화송금관리, v송금관리) | `발주` (Access와 같음) |
 | `workspace/inquiry/inquiry_미수금_entry.php` (미수금전체·미수금>0·USD미수금>0, v미수금관리) | `수주` (Access와 같음) |
 | 같은 화면 `?g=B…` (미수금B 3종 — 위 그리드만, 아래 그리드는 안 함) | `수주` (Access 미수금B는 적용 안 함 — 웹은 위 그리드에 적용) |
+| 문의확인 아래 탭 `workspace/inquiry/inquiryContent_문의내용_entry.php` (문의 탭, t문의내역) | `문의내용` (2026-11-18) |
+| 문의확인 아래 탭 `inquiryContent_수주_entry.php` (t수주내역) / `inquiryContent_수주히스토리_entry.php` (v수주내역) | `수주` |
+| 문의확인 아래 탭 `inquiryContent_발주_entry.php` (t발주내역) / `inquiryContent_발주히스토리_entry.php` (v발주내역) | `발주` |
+| 문의확인 아래 탭 `inquiryContent_견적_entry.php` (t문의_견적산출) | `견적` |
+
+- 탭은 업무 메뉴 화면과 **같은 nickname**을 쓴다(같은 자료라서). 탭이 원본 테이블(t…)을 보여 메뉴의 뷰(v…)와
+  필드가 다르면, 그 nickname 레코드 가운데 탭 그리드에 없는 필드는 건너뛰고 콘솔에 경고한다(`Applyds`).
+- tfieldvisible의 `문의탭`·`수주탭`·`발주탭`·`견적탭`·`수주히스토리탭`·`발주히스토리탭`(tablename `탭`)은
+  컬럼이 아니라 **탭 자체**를 가리키는 레코드로 보인다(fieldname = 탭 이름). 탭 숨기기는 아직 만들지 않았다.

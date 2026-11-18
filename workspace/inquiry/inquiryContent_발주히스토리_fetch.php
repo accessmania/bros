@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * [문의확인 > "발주 히스토리" 탭(inquiryContent_발주히스토리_entry.php)의 조회 엔드포인트]
- * v발주내역 중 parentcode = ?code(t문의.code)인 행. 보기 전용이라 조회만 한다
+ * v발주내역 중 parentcode = ?code(t문의.code)인 행. ?q=가 있으면 글자·숫자 필드에서 찾는다. 보기 전용이라 조회만 한다
  * (save/delete는 400). 날짜 컬럼은 dblib 형식이라 Str::toDate()로 'Y-m-d'로 바꾼다.
  */
 for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir = dirname($__bootDir)) {
@@ -40,8 +40,20 @@ $fields = array_keys($schema);
 $condition = $db->dialect()->quoteIdentifier('parentcode') . ' = ' . $db->pdo()->quote($code);
 $orderBy = $db->dialect()->quoteIdentifier('code') . ' DESC';
 
+// 검색(툴바의 검색창 → ?q=) — 글자·숫자 필드에서 LIKE '%q%'(OR). parentcode 조건과는 AND(Board가 묶는다).
+// 날짜·바이너리(ts) 필드는 LIKE로 찾을 수 없어 뺀다. 값은 Board가 PDO quote로 넣는다.
+$keyword = isset($_GET['q']) ? trim((string) $_GET['q']) : '';
+$searchTypes = ['char', 'varchar', 'nchar', 'nvarchar', 'text', 'ntext',
+    'int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'];
+$searchFields = [];
+foreach ($schema as $field => $info) {
+    if (in_array(strtolower((string) ($info['type'] ?? '')), $searchTypes, true)) {
+        $searchFields[] = $field;
+    }
+}
+
 $board = new Board($db);
-$board->init($tableName, implode(',', $fields), '', '', '', 1, 1000000, 1, $condition, $orderBy);
+$board->init($tableName, implode(',', $fields), implode(',', $searchFields), $keyword, '', 1, 1000000, 1, $condition, $orderBy);
 
 // SELECT *라 바이너리 ts가 섞이지 않게 스키마 필드만 남기고, 날짜는 'Y-m-d'로.
 $keep = array_flip($fields);

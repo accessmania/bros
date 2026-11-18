@@ -10,6 +10,7 @@ declare(strict_types=1);
  *    수정은 수주 팝업(inquiryContent_수주_amd.php)에서 한다.
  *  - 표시 필드는 $orderFields 순서. inquiry_수주_entry.php와 같게 둔다
  *    (파일 하나 = 자기완결 원칙의 의도된 중복).
+ *  - ?model=<모델명>면 그 모델명만(모델 이력 팝업 — 업체 관계없이). 상태와 AND.
  *  - ?st=<상태>면 그 상태만(콤보 원본 tb상태_수주). ?q=는 표시 필드 전체.
  *  - 날짜 타입 컬럼(수주일자 등)은 dblib 형식이라 Str::toDate()로 'Y-m-d'로 바꾼다.
  *  - 기본 정렬은 code(t수주내역.code) 내림차순.
@@ -72,6 +73,16 @@ foreach ($orderFields as $field) {
 $extraCondition = '';
 if (isset($_GET['st']) && trim((string) $_GET['st']) !== '') {
     $extraCondition = $db->dialect()->quoteIdentifier('상태') . ' = ' . $db->pdo()->quote(trim((string) $_GET['st']));
+}
+// ?model=<모델명> — 모델 이력 팝업(inquiryContent_모델이력_entry.php, amd의 빨간 ! 버튼)이 이 화면을 띄울 때.
+// 그 모델명과 똑같은 행만(업체 관계없이). 상태 조건과는 AND. 값은 PDO quote로 넣는다.
+if (isset($_GET['model']) && trim((string) $_GET['model']) !== '') {
+    $modelCondition = $db->dialect()->quoteIdentifier('모델명') . ' = ' . $db->pdo()->quote(trim((string) $_GET['model']));
+    if ($extraCondition === '') {
+        $extraCondition = $modelCondition;
+    } else {
+        $extraCondition = '(' . $extraCondition . ') AND ' . $modelCondition;
+    }
 }
 $defaultOrderBy = $db->dialect()->quoteIdentifier('code') . ' DESC';
 $keyword = isset($_GET['q']) ? (string) $_GET['q'] : '';

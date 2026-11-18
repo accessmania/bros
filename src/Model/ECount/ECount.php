@@ -187,6 +187,8 @@ class ECount
     /**
      * 품목 하나의 재고(Access action단품) — ['품목코드' => …, '수량' => …], 없으면 null.
      * 기준일은 오늘. 0재고·삭제 품목도 포함(Access와 같은 Y 플래그).
+     * SAFE_FLAG만 N — [2026-11-18] Y로는 재고가 있는 FLT012A0Z(전체재고에는 32개)가 Status 200, Result []로 왔다.
+     *   Y가 "안전재고 미달 품목만"으로 거르는 것으로 보고 N(거르지 않음)으로 바꿨다(전체재고 inventoryAll과 같은 값).
      * @return array{품목코드: string, 수량: string}|null
      */
     public function inventoryOne(string $pproductCode): ?array
@@ -203,7 +205,7 @@ class ECount
             'ZERO_FLAG' => 'Y',
             'BAL_FLAG' => 'Y',
             'DEL_GUBUN' => 'Y',
-            'SAFE_FLAG' => 'Y',
+            'SAFE_FLAG' => 'N', // Y면 안전재고 미달 품목만 오는 것으로 보인다(위 주석)
         ]);
 
         if (!isset($json['Data']['Result']) || !is_array($json['Data']['Result'])) {
@@ -365,7 +367,9 @@ class ECount
             $curlError = curl_error($curl);
             $response = '';
         }
-        curl_close($curl);   // PHP 7에서는 필요(8.0부터는 아무 일도 안 하고, 8.5에서 deprecated 표시)
+        // curl_close()는 쓰지 않는다 — PHP 8.0부터 아무 일도 안 하고 8.5에서 deprecated다.
+        // 핸들은 변수를 비우면 바로 풀린다.
+        unset($curl);
 
         $this->log[] = [
             'url' => $this->mask($purl),

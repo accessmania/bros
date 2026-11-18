@@ -18,6 +18,10 @@ declare(strict_types=1);
  *  - 신규추가 → 문의확인을 신규(new)로 연다(문의 목록과 같은 "문의확인" 탭).
  *  - 필드감추기: nickname '문의내용'(Access applyDs("문의내용", ...)) — src/Auth/FieldVisible.md.
  *
+ *  - ?model=<모델명>: 모델 이력 팝업(inquiryContent_모델이력_entry.php) 안에서 그 모델명만(업체 관계없이) 보인다.
+ *    신규추가 버튼은 숨기고, 더블클릭은 맨 위 창(index 셸)의 탭으로 연다.
+ *    이름에 code가 들어간 필드는 숨긴다('code' 자체는 보인다 — idtHideCodeFields).
+ *
  * 페이지 함수: action(pcmd, pparams, psender) — 'search'({pstatus, pkeyword}) / 'requery'.
  */
 for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir = dirname($__bootDir)) {
@@ -95,6 +99,12 @@ try {
 $fieldVisible = FieldVisible::init($detailDb);
 
 $fetchUrl = APP_BASE_URL . '/workspace/inquiry/' . rawurlencode('inquiry_문의내용_fetch.php');
+// ?model=<모델명> — 모델 이력 팝업(inquiryContent_모델이력_entry.php)이 띄울 때. 그 모델명만 보이게
+// fetch 주소에 붙인다(AGGrid는 검색·상태 값을 &로 이어 붙인다). 신규추가 버튼은 숨긴다.
+$modelFilter = isset($_GET['model']) ? trim((string) $_GET['model']) : '';
+if ($modelFilter !== '') {
+    $fetchUrl .= '?model=' . rawurlencode($modelFilter);
+}
 
 // 브라우저 캐시로 옛 JS가 보이지 않게 수정시각을 쿼리스트링에 붙인다.
 $aggridJsPath = APP_BASE_DIR . '/src/js/aggrid/AGGrid.js';
@@ -141,7 +151,7 @@ body { padding: 16px; box-sizing: border-box; font-family: 'Segoe UI', Inter, sy
 <body>
 
 <div class="idt-bar">
-    <button type="button" class="idt-add-btn" id="idt-add">+ 신규추가</button>
+    <button type="button" class="idt-add-btn" id="idt-add"<?= $modelFilter !== '' ? ' hidden' : '' ?>>+ 신규추가</button>
     <!-- 상태 콤보 — 원본자료는 tb상태_문의내역.상태. 처음엔 아무것도 고르지 않은 빈 상태. -->
     <select id="idt-status" aria-label="상태" autocomplete="off">
         <!-- 맨 위 공란 — 고르면 상태 조건 없이 전체를 조회한다. 상태 표에 빈 값이 있어도 공란은 이것 하나만 둔다. -->
@@ -167,6 +177,8 @@ var IDT_DETAIL_TAB = '문의내용확인';
 // 필드감추기 — {success, error, recs}. 이 화면의 nickname은 '문의내용'.
 var IDT_FIELDVISIBLE = <?= json_encode($fieldVisible, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 var IDT_NICKNAME = '문의내용';
+// 모델 이력 팝업(?model=) 안인지 — 그때만 이름에 code가 들어간 필드를 숨긴다(idtHideCodeFields).
+var IDT_MODEL_MODE = <?= json_encode($modelFilter !== '') ?>;
 
 <?php if ($statusError !== ''): ?>
 console.warn('tb상태_문의내역을 읽지 못해 상태 콤보가 비어 있습니다: ' + <?= json_encode($statusError, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>);
@@ -187,6 +199,7 @@ new AGGrid({
     showDeleteColumn: false,
     onReady: function (pgrid) {
         Applyds(pgrid, IDT_NICKNAME, IDT_FIELDVISIBLE);
+        idtHideCodeFields(pgrid);
     },
     onRowDblClick: function (pvalues) {
         idtOpenDetail(pvalues.parentcode, pvalues.code);
@@ -198,6 +211,35 @@ new AGGrid({
 });
 
 /** code 계열(int)은 번호라 천단위 콤마를 붙이지 않는다. */
+/**
+ * 모델 이력 팝업(?model=) 안에서만 — 이름에 code가 들어간 필드(대소문자 무관)를 숨긴다.
+ * 이름이 정확히 'code'인 필드는 보인다(2026-11-18). 업무 메뉴에서 열면 아무것도 안 한다.
+ * 필드감추기(Applyds) 뒤에 부르므로 둘 다 적용된다(숨김만 더한다).
+ */
+function idtHideCodeFields(pgrid) {
+    var cols;
+    var id;
+    var hide = [];
+    var i;
+
+    if (IDT_MODEL_MODE !== true || !pgrid || !pgrid.gridApi) {
+        return;
+    }
+    cols = pgrid.gridApi.getColumns();
+    for (i = 0; i < cols.length; i++) {
+        id = cols[i].getColId();
+        if (id.toLowerCase() === 'code') {
+            continue;
+        }
+        if (id.toLowerCase().indexOf('code') !== -1) {
+            hide.push(id);
+        }
+    }
+    if (hide.length > 0) {
+        pgrid.gridApi.setColumnsVisible(hide, false);
+    }
+}
+
 function idtPrepareColumns(pcolumns) {
     var i;
 
@@ -313,6 +355,10 @@ async function idtOpenContent(pcode) {
     url = 'workspace/inquiry/inquiryContent_entry.php?code=' + encodeURIComponent(pcode);
     title = '문의 (' + pcode + ')';
     shell = window.parent;
+    // 모델 이력 팝업 안(?model=)이면 부모는 팝업 화면이다 — 탭을 여는 index 셸은 맨 위 창.
+    if (typeof shell.setContent !== 'function' && typeof window.top.setContent === 'function') {
+        shell = window.top;
+    }
 
     if (shell === window || typeof shell.setContent !== 'function') {
         location.href = 'inquiryContent_entry.php?code=' + encodeURIComponent(pcode);
@@ -355,6 +401,10 @@ async function idtOpenDetail(pparentcode, pcode) {
     // 탭 제목의 괄호 안은 항상 t문의.code(이 행의 parentcode).
     title = '문의내용 (' + pparentcode + ')';
     shell = window.parent;
+    // 모델 이력 팝업 안(?model=)이면 부모는 팝업 화면이다 — 탭을 여는 index 셸은 맨 위 창.
+    if (typeof shell.setContent !== 'function' && typeof window.top.setContent === 'function') {
+        shell = window.top;
+    }
 
     if (shell === window || typeof shell.setContent !== 'function') {
         location.href = 'inquiryContent_entry.php?code=' + encodeURIComponent(pparentcode)

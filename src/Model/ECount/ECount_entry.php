@@ -4,7 +4,8 @@ declare(strict_types=1);
 /**
  * [ECount 시험 화면] — ECount.php의 함수를 하나씩 눌러 본다. 결과와 요청·응답 기록(인증키·세션은 가림)을 보여준다.
  * 순서: 설정 읽기(tAPI) → Zone 조회 → 로그인(세션은 PHP 세션) → 단품 재고.
- * 서버: ECount::TEST_SERVER(true = 시험 서버 sboapi).
+ * 서버: ECount::TEST_SERVER(true = 시험 서버 sboapi, false = 실제 서버 oapi — 지금은 false).
+ * 접근 주소: http://192.168.0.40/bros/src/Model/ECount/ECount_entry.php
  */
 for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir = dirname($__bootDir)) {
     if ($__bootDir === dirname($__bootDir)) {

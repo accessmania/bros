@@ -172,7 +172,7 @@ body {
 .amd-code-row input { width: 100px; }
 .amd-code-row .amd-spacer { flex: 1; }
 
-/* 모델명 줄 — 검색필드(좁게) + 모델명 콤보 + 찾기 버튼. */
+/* 모델명 줄 — 검색필드(좁게) + 모델명 콤보 + 찾기 버튼 + 빨간 ! 버튼(준비 중). */
 .amd-model-row { grid-column: 2 / 5; display: flex; gap: 2px; }
 .amd-model-row #검색 { width: 87px; flex: none; }
 .amd-model-row select { flex: 1; min-width: 0; }
@@ -184,6 +184,7 @@ button {
 button:hover:not(:disabled) { background: #d4d4d4; }
 button:disabled { color: #9ca3af; cursor: default; }
 .amd-icon-btn { width: 25px; padding: 0; flex: none; }
+.amd-alert-btn { color: #dc2626; font-weight: 700; }
 /* ECount 버튼 줄 — 버튼 옆에 이카운트 재고(제품·수량) 또는 실패 이유 */
 .amd-ecount-row { grid-column: 1 / 5; display: flex; align-items: center; gap: 10px; }
 .amd-ecount-result { color: #dc2626; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -245,6 +246,7 @@ button:disabled { color: #9ca3af; cursor: default; }
         <input type="text" id="검색" placeholder="검색" title="모델명에 들어간 글자로 찾습니다(Enter)">
         <select id="모델명"<?= amd_disabled($schemaFields, '모델명') ?>></select>
         <button type="button" class="amd-icon-btn" id="amd-model-find" title="모델 찾기">&#128269;</button>
+        <button type="button" class="amd-icon-btn amd-alert-btn" id="amd-model-alert" title="같은 모델명의 문의내용/수주/발주/견적">!</button>
     </div>
 
     <label for="제품종류">제품종류</label>
@@ -610,6 +612,26 @@ function amdEnsureOption(pid, pvalue) {
         }
     }
     el.add(new Option(value, value));
+}
+
+/**
+ * 모델명 옆 빨간 ! 버튼 — 같은 모델명의 문의내용/수주/발주/견적(업체 관계없이)을 띄운 쪽(문의확인)의
+ * 모델 이력 팝업으로 연다(action('openModelHistory', {model, maker}) — 제목 "모델명 (제조사)").
+ */
+function amdModelAlert() {
+    var model = amdTrim(document.getElementById('모델명').value);
+    var maker = amdTrim(document.getElementById('제조사').value);
+
+    if (model === '') {
+        amdMessage('모델명이 없습니다.', true);
+        return;
+    }
+    if (window.parent === window || typeof window.parent.action !== 'function') {
+        amdMessage('문의확인 화면에서 열었을 때만 볼 수 있습니다.', true);
+        return;
+    }
+    // kind = 이 amd의 종류 — 팝업 콤보가 처음에 이 종류를 고른다.
+    window.parent.action('openModelHistory', { model: model, maker: maker, kind: '문의내용' }, window);
 }
 
 function amdMessage(ptext, pisError) {
@@ -1088,6 +1110,8 @@ function amdInit() {
     // 준비 중인 버튼 — 누르면 안내만(지금은 없음).
     // 수식 버튼 = 수식 목록 팝업. 재계산 버튼 = calc()(수식 적용 — 결과를 칸에 넣는다).
     document.getElementById('amd-formula').addEventListener('click', amdOpenFormula);
+    // 모델명 옆 빨간 ! 버튼 — 같은 모델명의 이력(모델 이력 팝업).
+    document.getElementById('amd-model-alert').addEventListener('click', amdModelAlert);
     document.getElementById('amd-recalc').addEventListener('click', calc);
 
     // ECount 버튼 = 품목코드의 이카운트 재고를 버튼 옆에.

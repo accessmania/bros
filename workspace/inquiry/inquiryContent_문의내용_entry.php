@@ -4,11 +4,12 @@ declare(strict_types=1);
 /**
  * [문의확인 > "문의" 탭 — inquiryContent_entry.php의 iframe 안에 뜨는 페이지]
  * t문의내역 중 parentcode = ?code(t문의.code)인 행을 보여준다. 보기 전용 —
- * 편집/페이저 없음. 그리드 위에 신규추가/견적자료/발주자료/ECount 버튼 —
+ * 편집/페이저 없음. 그리드 위에 신규추가/ECount 버튼 —
  * 신규추가는 부모의 action('addnew_문의내용')을 부른다(addNew),
- * ECount는 부모의 action('openEcountStock') — ECount (전체재고) 팝업(openEcountStock),
- * 견적자료/발주자료는 다음 단계.
+ * ECount는 부모의 action('openEcountStock') — ECount (전체재고) 팝업(openEcountStock).
+ * (견적자료/발주자료 버튼은 2026-11-18에 뺐다.)
  * 조회는 inquiryContent_문의내용_fetch.php.
+ * 필드감추기: nickname '문의내용'(업무 메뉴 화면과 같다) — src/Auth/FieldVisible.md.
  *
  * 페이지 함수: requery() / action('requery') — 다시 불러온다.
  * 행 더블클릭 → 부모의 action('selectRecord_문의내용', {code}) — 문의내역 팝업(openDetail).
@@ -24,7 +25,7 @@ for ($__bootDir = __DIR__; !is_file($__bootDir . '/config/Path.php'); $__bootDir
 }
 require_once $__bootDir . '/config/Path.php';
 unset($__bootDir);
-include_custom('DbContext', 'Crud', 'Login');
+include_custom('DbContext', 'Crud', 'Login', 'FieldVisible');
 
 // 로그인이 안 살아있으면 여기서 login.php로 이동하고 끝난다.
 Login::isAlive();
@@ -35,8 +36,6 @@ $gridId = '문의내용';
 // [id, 글자, 추가 class]
 $buttons = [
     ['new', '+ 신규추가', 'ic-add'],
-    ['quote', '견적자료', ''],
-    ['order', '발주자료', ''],
     ['ecount', 'ECount', 'ic-ecount'],
 ];
 
@@ -57,6 +56,12 @@ foreach ($probe->getSchema()['fields'] as $field => $info) {
 $fetchUrl = APP_BASE_URL . '/workspace/inquiry/' . rawurlencode('inquiryContent_문의내용_fetch.php') . '?code=' . rawurlencode($code);
 $aggridJsPath = APP_BASE_DIR . '/src/js/aggrid/AGGrid.js';
 $aggridJsVersion = is_file($aggridJsPath) ? filemtime($aggridJsPath) : time();
+
+// 필드감추기 — 이 계정 권한의 tfieldvisible 레코드 전부(src/Auth/FieldVisible.md).
+// 화면 이름(nickname)은 업무 메뉴의 같은 자료 화면과 같다: '문의내용'.
+$fieldVisible = FieldVisible::init(new DbContext(null));
+$fieldVisibleJsPath = APP_BASE_DIR . '/src/Auth/FieldVisible.js';
+$fieldVisibleJsVersion = is_file($fieldVisibleJsPath) ? filemtime($fieldVisibleJsPath) : time();
 ?>
 <!doctype html>
 <html lang="ko">
@@ -66,6 +71,7 @@ $aggridJsVersion = is_file($aggridJsPath) ? filemtime($aggridJsPath) : time();
 <title>문의내용</title>
 <!-- document.currentScript로 vendor 경로를 찾으므로 async/defer 없이 동기 로드 -->
 <script src="<?= APP_BASE_URL ?>/src/js/aggrid/AGGrid.js?v=<?= $aggridJsVersion ?>"></script>
+<script src="<?= APP_BASE_URL ?>/src/Auth/FieldVisible.js?v=<?= $fieldVisibleJsVersion ?>"></script>
 <style>
 html, body { margin: 0; height: 100%; overflow: hidden; }
 body { padding: 10px; box-sizing: border-box; font-family: 'Malgun Gothic', 'Segoe UI', system-ui, sans-serif; font-size: 13px; color: #1e293b; }
@@ -87,12 +93,19 @@ body { padding: 10px; box-sizing: border-box; font-family: 'Malgun Gothic', 'Seg
 </div>
 <div id="aggrid-<?= $gridId ?>"></div>
 <script>
+// 필드감추기 — {success, error, recs}. 이 탭의 nickname은 '문의내용'(업무 메뉴 화면과 같다).
+var IC_TAB_FIELDVISIBLE = <?= json_encode($fieldVisible, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+var IC_TAB_NICKNAME = '문의내용';
+
 // 몇 건뿐이라 페이저 없이 한 번에 받고(fetchMode 'all'), 높이는 iframe 바닥까지 채운다.
 new AGGrid({
     gridId: <?= json_encode($gridId, JSON_UNESCAPED_UNICODE) ?>,
     fetchUrl: <?= json_encode($fetchUrl, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
     primaryKey: 'code',
     fetchMode: 'all',
+    onReady: function (pgrid) {
+        Applyds(pgrid, IC_TAB_NICKNAME, IC_TAB_FIELDVISIBLE);
+    },
     autoFitBottomGap: 10,
     minHeight: 120,
     showSearch: false,
@@ -216,14 +229,9 @@ function openEcountStock() {
     window.parent.action('openEcountStock', {}, window);
 }
 
-// 버튼 — 신규추가, ECount. 견적자료/발주자료는 다음 단계(지금은 안내만).
+// 버튼 — 신규추가, ECount. (견적자료/발주자료 버튼은 2026-11-18에 뺐다.)
 document.getElementById('ic-new').addEventListener('click', addNew);
 document.getElementById('ic-ecount').addEventListener('click', openEcountStock);
-document.querySelectorAll('.ic-buttons button:not(#ic-new):not(#ic-ecount)').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-        alert(btn.textContent + ' — 준비 중입니다.');
-    });
-});
 </script>
 </body>
 </html>

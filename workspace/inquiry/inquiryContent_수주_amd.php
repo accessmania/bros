@@ -249,6 +249,11 @@ body {
 .amd-date.amd-date-empty:not(:focus)::-webkit-datetime-edit { color: transparent; }
 .amd-form select { text-align: center; }
 .amd-wide { grid-column: 2 / 5; }
+/* 모델명 줄 — 모델명 칸은 제조사 칸과 같은 폭(2~4열 끝까지). 빨간 ! 버튼(준비 중)은 칸 오른쪽 바깥,
+   body 오른쪽 여백(30px) 안에 붙인다(버튼 25px + 간격 2px). 여백을 줄이면 버튼이 잘리니 함께 고친다. */
+.amd-model-row { position: relative; min-width: 0; }
+.amd-model-row .amd-alert-btn { position: absolute; top: 0; left: 100%; margin-left: 2px; }
+.amd-alert-btn { width: 25px; padding: 0; flex: none; color: #dc2626; font-weight: 700; }
 .amd-gap { grid-column: 1 / 5; height: 6px; }
 .amd-red { color: #dc2626; }
 .amd-blue { color: #2563eb; }
@@ -306,7 +311,10 @@ button:disabled { color: #9ca3af; cursor: default; }
     <?= amd_text_input($schemaFields, '품목코드') ?>
 
     <?= amd_label('모델명', '모델명') ?>
-    <?= amd_text_input($schemaFields, '모델명', 'amd-wide') ?>
+    <div class="amd-model-row amd-wide">
+        <?= amd_text_input($schemaFields, '모델명') ?>
+        <button type="button" class="amd-alert-btn" id="amd-model-alert" title="같은 모델명의 문의내용/수주/발주/견적">!</button>
+    </div>
 
     <?= amd_label('제조사', '제조사') ?>
     <?= amd_text_input($schemaFields, '제조사', 'amd-wide') ?>
@@ -618,6 +626,26 @@ function amdEnsureOption(pid, pvalue) {
         }
     }
     el.add(new Option(value, value));
+}
+
+/**
+ * 모델명 옆 빨간 ! 버튼 — 같은 모델명의 문의내용/수주/발주/견적(업체 관계없이)을 띄운 쪽(문의확인)의
+ * 모델 이력 팝업으로 연다(action('openModelHistory', {model, maker}) — 제목 "모델명 (제조사)").
+ */
+function amdModelAlert() {
+    var model = amdTrim(document.getElementById('모델명').value);
+    var maker = amdTrim(document.getElementById('제조사').value);
+
+    if (model === '') {
+        amdMessage('모델명이 없습니다.', true);
+        return;
+    }
+    if (window.parent === window || typeof window.parent.action !== 'function') {
+        amdMessage('문의확인 화면에서 열었을 때만 볼 수 있습니다.', true);
+        return;
+    }
+    // kind = 이 amd의 종류 — 팝업 콤보가 처음에 이 종류를 고른다.
+    window.parent.action('openModelHistory', { model: model, maker: maker, kind: '수주' }, window);
 }
 
 function amdMessage(ptext, pisError) {
@@ -978,6 +1006,8 @@ function amdInit() {
     document.getElementById('문의code').addEventListener('change', amdDetailCodeChanged);
     document.getElementById('amd-detail-open').addEventListener('click', amdOpenDetail);
     document.getElementById('amd-formula').addEventListener('click', amdOpenFormula);
+    // 모델명 옆 빨간 ! 버튼 — 같은 모델명의 이력(모델 이력 팝업).
+    document.getElementById('amd-model-alert').addEventListener('click', amdModelAlert);
 
     // 준비 중인 버튼 — 누르면 안내만(지금은 없음).
     // 재계산 버튼 = calc()(수식 적용), 빨간 레이블 칸을 바꾸면 calc().
